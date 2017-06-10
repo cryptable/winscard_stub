@@ -1,0 +1,4 @@
+#ifndef WINSCARD_STUB_LIBRARY_H
+#define WINSCARD_STUB_LIBRARY_H
+
+#endif
