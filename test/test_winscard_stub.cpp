@@ -12,7 +12,11 @@ TEST_CASE( "SCardEstablishContext() success stubbing call", "[API]") {
 
   ret = SCardEstablishContext(SCARD_SCOPE_SYSTEM, NULL, NULL, &hContext);
 
-  REQUIRE( ret == SCARD_S_SUCCESS);
+  SECTION("Success") {
+    ret = SCardEstablishContext(SCARD_SCOPE_SYSTEM, NULL, NULL, &hContext);
+
+    REQUIRE( ret == SCARD_S_SUCCESS);
+  }
 
   SECTION("Failed return code") {
     SetReturnCodeFor setReturnCodeFor("SCardEstablishContext", SCARD_E_INVALID_PARAMETER);
@@ -29,7 +33,11 @@ TEST_CASE( "SCardReleaseContext() failed stubbing call", "[API]") {
 
   ret = SCardReleaseContext(hContext);
 
-  REQUIRE( ret == SCARD_S_SUCCESS);
+  SECTION("Success") {
+    ret = SCardReleaseContext(hContext);
+
+    REQUIRE(ret == SCARD_S_SUCCESS);
+  }
 
   SECTION("Failed return code") {
     SetReturnCodeFor setReturnCodeFor("SCardReleaseContext", SCARD_E_INVALID_HANDLE);
@@ -49,9 +57,11 @@ TEST_CASE( "SCardListReaders() for one reader only", "[API]") {
   SetOutParameterFor setOutParameterFor1("SCardListReaders", "mszReaders", (void *)readers);
   SetOutParameterFor setOutParameterFor2("SCardListReaders", "pcchReaders", (void *)readersSize);
 
-  ret = SCardListReaders(hContext, NULL, NULL, NULL);
+  SECTION("Success") {
+    ret = SCardListReaders(hContext, NULL, NULL, NULL);
 
-  REQUIRE(ret == SCARD_S_SUCCESS);
+    REQUIRE(ret == SCARD_S_SUCCESS);
+  }
 
   SECTION("Failed return code"){
     SetReturnCodeFor setReturnCodeFor("SCardListReaders", SCARD_E_INVALID_HANDLE);
