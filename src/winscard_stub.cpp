@@ -45,6 +45,8 @@ public:
     return name;
   };
 
+  virtual void execute(const char *in_apdu, size_t in_apdu_lg, char **out_apdu, size_t *out_apd_lg) = 0;
+
 protected:
   const string name;
 
@@ -58,6 +60,14 @@ SmartCardReader::SmartCardReader(string readerName) : name(std::move(readerName)
 }
 
 /**
+ * Smartcard simulator
+ */
+class SmartCard {
+
+private:
+};
+
+/**
  * Normal Smart card reader
  */
 class NonPinpadReader : public SmartCardReader {
@@ -66,9 +76,10 @@ public:
 
   };
 
-  ~NonPinpadReader() {
+  void execute(const char *in_apdu, size_t in_apdu_lg, char **out_apdu, size_t *out_apd_lg) override {
 
-  };
+  }
+
 private:
 
 };
@@ -82,19 +93,12 @@ public:
 
   }
 
-  ~PinpadReader() {
+  void execute(const char *in_apdu, size_t in_apdu_lg, char **out_apdu, size_t *out_apd_lg) override {
 
   }
-private:
-
-};
-
-/**
- * Smartcard simulator
- */
-class SmartCard {
 
 private:
+
 };
 
 /**
@@ -104,6 +108,11 @@ class WinscardContext {
 
 private:
 };
+
+/**
+ * Global configuration for the winscard stub
+ */
+
 
 /**
  * Winscard handles
