@@ -78,7 +78,7 @@ public:
   };
 
   void execute(const char *in_apdu, size_t in_apdu_lg, char **out_apdu, size_t *out_apd_lg) override {
-
+    (void)in_apdu;
   }
 
 private:
@@ -149,7 +149,7 @@ private:
       readerNamesLg += reader->getName().size() + 1;
     }
     readerNamesLg += 1;
-    readerNames = new unsigned char [readerNamesLg];
+    readerNames = new unsigned char[readerNamesLg];
     memset((void *)readerNames, 0, readerNamesLg);
     unsigned int index = 0;
     for (auto &reader : readers) {
@@ -186,9 +186,9 @@ PCSC_API LONG SCardReleaseContext(SCARDCONTEXT hContext)
 {
   // Default behavior
   if (hContext < g_index) {
-    if (g_contexts[hContext] != NULL) {
+    if (g_contexts[hContext] != nullptr) {
       delete g_contexts[hContext];
-      g_contexts[hContext] = NULL;
+      g_contexts[hContext] = nullptr;
     }
   }
 
@@ -202,7 +202,7 @@ PCSC_API LONG SCardIsValidContext(SCARDCONTEXT hContext)
   if (hContext >= g_index) {
     return SCARD_E_INVALID_HANDLE;
   }
-  if (g_contexts[hContext] == NULL) {
+  if (g_contexts[hContext] == nullptr) {
     return SCARD_E_INVALID_HANDLE;
   }
 
@@ -275,13 +275,15 @@ PCSC_API LONG SCardListReaders(SCARDCONTEXT hContext, LPCSTR mszGroups, LPSTR ms
   unsigned long data_lg = 0;
 
   // Overwritten function
-  if (!get_out_parameter_for("winscard", __FUNCTION_NAME__, "mszReaders", &data, &data_lg)) {
+  if (get_out_parameter_for("winscard", __FUNCTION_NAME__, "mszReaders", &data, &data_lg) == 0) {
     g_contexts[hContext]->getReaderNames(&data, &data_lg);
   }
-  if (mszReaders && pcchReaders && (*pcchReaders) >= data_lg) {
+  if ((mszReaders != nullptr)
+      && (pcchReaders != nullptr)
+      && (*pcchReaders) >= data_lg) {
     memcpy(mszReaders, data, *pcchReaders);
   }
-  if (pcchReaders) {
+  if (pcchReaders != nullptr) {
     *pcchReaders = data_lg;
   }
 

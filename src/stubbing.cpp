@@ -105,15 +105,15 @@ public:
 
     const unsigned char *getBuffer() const { return buffer; };
 
-    const size_t getBufferLg() const { return buffer_size; };
+    size_t getBufferLg() const { return buffer_size; };
 
   private:
 
-    unsigned char *buffer;
     size_t buffer_size;
+    unsigned char *buffer;
 
     void copy(const MemBuffer &data) {
-      buffer = new unsigned char(data.getBufferLg());
+      buffer = new unsigned char[data.getBufferLg()];
       memcpy(buffer, data.getBuffer(), data.getBufferLg());
       buffer_size = data.getBufferLg();
     }
@@ -214,6 +214,8 @@ unique_ptr<Stubbing> Stubbing::instance_of(string &impl) {
   if (impl == "memory") {
     return unique_ptr<Stubbing>(new StubbingMemory());
   }
+
+  return nullptr;
 }
 
 string stubbing_impl = string("memory");
