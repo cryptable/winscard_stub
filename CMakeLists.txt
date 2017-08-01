@@ -9,7 +9,7 @@ set(SOURCE_FILES src/winscard_stub.cpp include/winscard_stub.h src/stubbing.cpp 
 
 add_library(winscard_stub ${SOURCE_FILES})
 
-set(TEST_SOURCE_FILES test/test_winscard_stub.cpp)
+set(TEST_SOURCE_FILES test/test_winscard_stub.cpp test/test_stubbing.cpp)
 
 # Testing & Code Coverage support
 enable_testing()

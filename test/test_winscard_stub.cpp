@@ -19,7 +19,7 @@ TEST_CASE( "SCardEstablishContext() success stubbing call", "[API]") {
   }
 
   SECTION("Failed return code") {
-    SetReturnCodeFor setReturnCodeFor("SCardEstablishContext", SCARD_E_INVALID_PARAMETER);
+    SetReturnCodeFor setReturnCodeFor("winscard", "SCardEstablishContext", SCARD_E_INVALID_PARAMETER);
 
     ret = SCardEstablishContext(SCARD_SCOPE_SYSTEM, NULL, NULL, &hContext);
 
@@ -40,7 +40,7 @@ TEST_CASE( "SCardReleaseContext() failed stubbing call", "[API]") {
   }
 
   SECTION("Failed return code") {
-    SetReturnCodeFor setReturnCodeFor("SCardReleaseContext", SCARD_E_INVALID_HANDLE);
+    SetReturnCodeFor setReturnCodeFor("winscard", "SCardReleaseContext", SCARD_E_INVALID_HANDLE);
 
     ret = SCardReleaseContext(hContext);
 
@@ -51,11 +51,10 @@ TEST_CASE( "SCardReleaseContext() failed stubbing call", "[API]") {
 TEST_CASE( "SCardListReaders() for one reader only", "[API]") {
   SCARDCONTEXT hContext = 101;
   LONG         ret = 0;
-  const char   readers[] = "Reader 1\0";
-  DWORD        readersSize = 10;
+  const unsigned char readers[] = "Reader 1\0";
+  DWORD readersSize = 10;
 
-  SetOutParameterFor setOutParameterFor1("SCardListReaders", "mszReaders", (void *)readers);
-  SetOutParameterFor setOutParameterFor2("SCardListReaders", "pcchReaders", (void *)readersSize);
+  SetOutParameterFor setOutParameterFor1("winscard", "SCardListReaders", "mszReaders", readers, readersSize);
 
   SECTION("Success") {
     ret = SCardListReaders(hContext, NULL, NULL, NULL);
@@ -64,7 +63,7 @@ TEST_CASE( "SCardListReaders() for one reader only", "[API]") {
   }
 
   SECTION("Failed return code"){
-    SetReturnCodeFor setReturnCodeFor("SCardListReaders", SCARD_E_INVALID_HANDLE);
+    SetReturnCodeFor setReturnCodeFor("winscard", "SCardListReaders", SCARD_E_INVALID_HANDLE);
 
     ret = SCardListReaders(hContext, NULL, NULL, NULL);
 
