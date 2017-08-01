@@ -65,7 +65,7 @@ public:
       buffer_size = data_lg;
     }
 
-    MemBuffer(const MemBuffer &data) {
+    MemBuffer(const MemBuffer &data) : buffer_size(0), buffer(nullptr) {
       copy(data);
     }
 
@@ -74,7 +74,7 @@ public:
       return *this;
     }
 
-    MemBuffer(MemBuffer &&data) : buffer_size(0), buffer(nullptr) {
+    MemBuffer(MemBuffer &&data) noexcept : buffer_size(0), buffer(nullptr) {
       // Move values
       buffer_size = data.buffer_size;
       buffer = data.buffer;
@@ -83,7 +83,7 @@ public:
       data.buffer = nullptr;
     }
 
-    MemBuffer &operator=(MemBuffer &&data) {
+    MemBuffer &operator=(MemBuffer &&data) noexcept {
       if (this!=&data) {
         // free local
         delete buffer;
@@ -121,19 +121,19 @@ public:
 
   StubbingMemory() = default;
 
-  StubbingMemory(StubbingMemory &other) = default;
+  StubbingMemory(StubbingMemory &other) = delete;
 
   StubbingMemory(StubbingMemory &&other) = delete;
 
-  StubbingMemory &operator=(StubbingMemory &other) = default;
+  StubbingMemory &operator=(StubbingMemory &other) = delete;
 
   StubbingMemory &operator=(StubbingMemory &&other) = delete;
 
-  void set_return_code_for(const char *function, long ret) {
+  void set_return_code_for(const char *function, long ret) override {
     return_codes[function] = ret;
   }
 
-  long get_return_code_for(const char *function, long default_ret) {
+  long get_return_code_for(const char *function, long default_ret) override {
     map<string, long>::const_iterator return_codes_it = return_codes.find(function);
     if ( return_codes_it!=return_codes.end() ) {
       return return_codes_it->second;
@@ -142,23 +142,23 @@ public:
     return default_ret;
   }
 
-  void clear_return_code_for(const char *function) {
+  void clear_return_code_for(const char *function) override {
     return_codes.erase(function);
   }
 
-  void clear_return_codes(void) {
+  void clear_return_codes() override {
     return_codes.clear();
   }
 
-  void set_out_parameter_for(const char *function, const char *parameter, const unsigned char *data, size_t data_lg) {
+  void set_out_parameter_for(const char *function, const char *parameter, const unsigned char *data, size_t data_lg) override {
     out_parameters[function][parameter] = new MemBuffer(data, data_lg);
   }
 
-  long get_out_parameter_for(const char *function, const char *parameter, const unsigned char **data, unsigned long *data_lg) {
+  long get_out_parameter_for(const char *function, const char *parameter, const unsigned char **data, unsigned long *data_lg) override {
     map<string, map<string, MemBuffer*>>::const_iterator out_parameters_it = out_parameters.find(function);
     if ( out_parameters_it!=out_parameters.end() ) {
       map<string, MemBuffer*> params = out_parameters_it->second;
-      map<string, MemBuffer*>::iterator out_params_it = params.find(parameter);
+      auto out_params_it = params.find(parameter);
       if (out_params_it!=params.end()) {
         *data = (*out_params_it).second->getBuffer();
         *data_lg = (*out_params_it).second->getBufferLg();
@@ -170,8 +170,8 @@ public:
     return 0;
   }
 
-  void clear_out_parameter_for(const char *function, const char *parameter) {
-    map<string, map<string, MemBuffer*>>::iterator function_it = out_parameters.find(function);
+  void clear_out_parameter_for(const char *function, const char *parameter) override {
+    auto function_it = out_parameters.find(function);
 
     if ( function_it!=out_parameters.end() ) {
       map<string, MemBuffer *>::const_iterator param_it = (function_it->second).find(parameter);
@@ -183,25 +183,23 @@ public:
     }
   }
 
-  void clear_out_parameters(void) {
-    map<string, map<string, MemBuffer*>>::const_iterator function_it;
-    map<string, MemBuffer*>::const_iterator param_it;
+  void clear_out_parameters() override {
 
-    for (function_it = out_parameters.begin(); function_it != out_parameters.end(); ++function_it) {
-      for (param_it = (*function_it).second.begin(); param_it != (*function_it).second.end(); ++param_it) {
-        delete (*param_it).second;
+    for (auto&& params : out_parameters) {
+      for (auto&& param : params.second) {
+        delete param.second;
       }
     }
 
     out_parameters.clear();
   }
 
-  void clear_all(void) {
+  void clear_all() override {
     clear_return_codes();
     clear_out_parameters();
   }
 
-  ~StubbingMemory() {
+  ~StubbingMemory() override {
     clear_all();
   }
 
@@ -217,17 +215,18 @@ Stubbing *Stubbing::instance_of(string &impl) {
   }
 }
 
+string stubbing_impl = string("memory");
+map<string, Stubbing *> g_modules;
+
 #ifdef __cplusplus
 extern "C" {
 #endif
-string stubbing_impl = string("memory");
-map<string, Stubbing *> g_modules;
 
 void set_return_code_for(const char *module, const char *function, long ret) {
   try {
     g_modules.at(module)->set_return_code_for(function, ret);
   }
-  catch (out_of_range e) {
+  catch (out_of_range &e) {
     g_modules[module] = Stubbing::instance_of(stubbing_impl);
     g_modules.at(module)->set_return_code_for(function, ret);
   }
@@ -237,7 +236,7 @@ long get_return_code_for(const char *module, const char *function, long default_
   try {
     return g_modules.at(module)->get_return_code_for(function, default_ret);
   }
-  catch (out_of_range e) {
+  catch (out_of_range &e) {
     return default_ret;
   }
 }
@@ -246,7 +245,7 @@ void set_out_parameter_for(const char *module, const char *function, const char 
   try {
     g_modules.at(module)->set_out_parameter_for(function, parameter, data, data_lg);
   }
-  catch (out_of_range e) {
+  catch (out_of_range &e) {
     g_modules[module] = Stubbing::instance_of(stubbing_impl);
     g_modules.at(module)->set_out_parameter_for(function, parameter, data, data_lg);
   }
@@ -256,7 +255,7 @@ long get_out_parameter_for(const char *module, const char *function, const char 
   try {
     return g_modules.at(module)->get_out_parameter_for(function, parameter, data, data_lg);
   }
-  catch (out_of_range e) {
+  catch (out_of_range &e) {
     return 0;
   }
 }
@@ -265,7 +264,7 @@ void clear_return_codes(const char *module) {
   try {
     g_modules.at(module)->clear_return_codes();
   }
-  catch (out_of_range e) {
+  catch (out_of_range &e) {
     // Ignore error
   }
 }
@@ -274,7 +273,7 @@ void clear_out_parameters(const char *module) {
   try {
     g_modules.at(module)->clear_out_parameters();
   }
-  catch (out_of_range e) {
+  catch (out_of_range &e) {
     // Ignore error
   }
 }
@@ -283,7 +282,7 @@ void clear_stubbing(const char *module) {
   try {
     g_modules.at(module)->clear_all();
   }
-  catch (out_of_range e) {
+  catch (out_of_range &e) {
     // Ignore erroe
   }
 }
@@ -292,7 +291,7 @@ void clear_return_code_for(const char *module, const char *function) {
   try {
     g_modules.at(module)->clear_return_code_for(function);
   }
-  catch (out_of_range e) {
+  catch (out_of_range &e) {
     // Ignore error
   }
 }
@@ -301,7 +300,7 @@ void clear_out_parameter_for(const char *module, const char *function, const cha
   try {
     g_modules.at(module)->clear_out_parameter_for(function, parameter);
   }
-  catch (out_of_range e) {
+  catch (out_of_range &e) {
     // Ignore error
   }
 }

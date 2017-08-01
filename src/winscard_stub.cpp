@@ -1,7 +1,6 @@
 /**
  * Implementation of the winscard stubbing interface
  */
-#include "winscard_stub.h"
 #include "stubbing.h"
 #include <wintypes.h>
 #include <winscard.h>
@@ -25,12 +24,24 @@ using namespace std;
  * Smartcard reader simulator
  */
 class SmartCardReader {
+
 public:
-  SmartCardReader(string readerName) : name(readerName) {
 
-  };
+  SmartCardReader() = delete;
 
-  string getName() {
+  SmartCardReader(SmartCardReader &other) = delete;
+
+  SmartCardReader &operator=(SmartCardReader &other) = delete;
+
+  SmartCardReader(SmartCardReader &&other) = delete;
+
+  SmartCardReader &operator=(SmartCardReader &&other) = delete;
+
+  ~SmartCardReader() = default;
+
+  explicit SmartCardReader(string readerName);;
+
+  string getName() const {
     return name;
   };
 
@@ -38,8 +49,13 @@ protected:
   const string name;
 
 private:
-  unsigned int winscard_state = SMARTCARD_READER_NOT_CONNECTED;
+  unsigned int winscard_state;
 };
+
+SmartCardReader::SmartCardReader(string readerName) : name(std::move(readerName)),
+                                                      winscard_state(SMARTCARD_READER_NOT_CONNECTED) {
+
+}
 
 /**
  * Normal Smart card reader

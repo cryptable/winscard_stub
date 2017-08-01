@@ -26,6 +26,7 @@ set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake-modules)
 if(CMAKE_COMPILER_IS_GNUCXX)
     include(CodeCoverage)
     APPEND_COVERAGE_COMPILER_FLAGS()
+    set(COVERAGE_EXCLUDES "test/catch.hpp" "5/*")
     setup_target_for_coverage(NAME ${PROJECT_TEST_NAME}_coverage
             EXECUTABLE ${PROJECT_TEST_NAME}
             DEPENDENCIES ${PROJECT_TEST_NAME})
