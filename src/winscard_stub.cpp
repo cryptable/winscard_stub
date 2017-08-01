@@ -6,6 +6,7 @@
 #include <winscard.h>
 #include <cstring>
 #include <vector>
+#include <memory>
 
 #ifndef __FUNCTION_NAME__
   #ifdef WIN32   //WINDOWS
@@ -106,7 +107,57 @@ private:
  */
 class WinscardContext {
 
+public:
+
+  const vector<unique_ptr<SmartCardReader>> &getReaders() const {
+    return readers;
+  }
+
+  WinscardContext() {
+    readers.push_back(unique_ptr<PinpadReader>(new PinpadReader()));
+    readers.push_back(unique_ptr<NonPinpadReader>(new NonPinpadReader()));
+    refreshReaderNames();
+  }
+
+  WinscardContext(WinscardContext &other) = delete;
+
+  WinscardContext(WinscardContext &&other) = delete;
+
+  WinscardContext &operator=(WinscardContext &other) = delete;
+
+  WinscardContext &operator=(WinscardContext &&other) = delete;
+
+  ~WinscardContext() {
+    delete[] readerNames;
+  }
+
+  void getReaderNames(const unsigned char **mszReaders, size_t *readersLg) {
+    *readersLg = readerNamesLg;
+    *mszReaders = readerNames;
+  }
+
 private:
+  vector<unique_ptr<SmartCardReader>> readers;
+  unsigned char *readerNames = nullptr;
+  size_t readerNamesLg = 0;
+
+  void refreshReaderNames() {
+
+    delete[] readerNames;
+
+    for (auto &reader : readers) {
+      readerNamesLg += reader->getName().size() + 1;
+    }
+    readerNamesLg += 1;
+    readerNames = new unsigned char [readerNamesLg];
+    memset((void *)readerNames, 0, readerNamesLg);
+    unsigned int index = 0;
+    for (auto &reader : readers) {
+      memcpy((void *)&(readerNames[index]), reader->getName().c_str(), reader->getName().size());
+      index += reader->getName().size();
+      index++;
+    }
+  }
 };
 
 /**
@@ -220,22 +271,20 @@ PCSC_API LONG SCardListReaderGroups(SCARDCONTEXT hContext, LPSTR mszGroups, LPDW
 
 PCSC_API LONG SCardListReaders(SCARDCONTEXT hContext, LPCSTR mszGroups, LPSTR mszReaders, LPDWORD pcchReaders)
 {
-  const unsigned char *data = NULL;
+  const unsigned char *data = nullptr;
   unsigned long data_lg = 0;
 
   // Overwritten function
-  if (get_out_parameter_for("winscard", __FUNCTION_NAME__, "mszReaders", &data, &data_lg)) {
-    if (pcchReaders) {
-      *pcchReaders = data_lg;
-    }
-    if (mszReaders) {
-      memcpy(mszReaders, data, *pcchReaders);
-    }
+  if (!get_out_parameter_for("winscard", __FUNCTION_NAME__, "mszReaders", &data, &data_lg)) {
+    g_contexts[hContext]->getReaderNames(&data, &data_lg);
   }
-  else {
-    // Default behavior
+  if (mszReaders && pcchReaders && (*pcchReaders) >= data_lg) {
+    memcpy(mszReaders, data, *pcchReaders);
+  }
+  if (pcchReaders) {
+    *pcchReaders = data_lg;
+  }
 
-  }
 
   return get_return_code_for("winscard", __FUNCTION_NAME__ ,SCARD_S_SUCCESS);
 }

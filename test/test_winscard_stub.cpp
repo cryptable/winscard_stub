@@ -10,12 +10,12 @@ TEST_CASE( "SCardEstablishContext() success stubbing call", "[API]") {
   SCARDCONTEXT hContext = 0;
   LONG         ret = 0;
 
-  ret = SCardEstablishContext(SCARD_SCOPE_SYSTEM, NULL, NULL, &hContext);
-
   SECTION("Success") {
     ret = SCardEstablishContext(SCARD_SCOPE_SYSTEM, NULL, NULL, &hContext);
 
     REQUIRE( ret == SCARD_S_SUCCESS);
+
+    ret = SCardReleaseContext(hContext);
   }
 
   SECTION("Failed return code") {
@@ -24,6 +24,8 @@ TEST_CASE( "SCardEstablishContext() success stubbing call", "[API]") {
     ret = SCardEstablishContext(SCARD_SCOPE_SYSTEM, NULL, NULL, &hContext);
 
     REQUIRE( ret == SCARD_E_INVALID_PARAMETER);
+
+    ret = SCardReleaseContext(hContext);
   }
 }
 
@@ -78,11 +80,52 @@ TEST_CASE( "SCardListReaders() for one reader only", "[API]") {
   }
 
   SECTION("Check returned readers") {
-    DWORD        tbcReadersSize = 0;
+    DWORD        tbcReadersSize = 10;
     char         tbcReaders[32] = { 0x00 };
     ret = SCardListReaders(hContext, NULL, tbcReaders, &tbcReadersSize);
 
     REQUIRE(readersSize == tbcReadersSize);
     REQUIRE(strcmp(tbcReaders, "Reader 1") == 0);
   }
+}
+
+TEST_CASE( "SCardListReaders() for default readers", "[API]") {
+  SCARDCONTEXT hContext = 0;
+  LONG         ret = 0;
+  DWORD readersSize = 33;
+  char defaultReaders[] = "Pinpad Reader\0Non Pinpad Reader\0\0";
+
+  ret = SCardEstablishContext(SCARD_SCOPE_SYSTEM, NULL, NULL, &hContext);
+
+  SECTION("Success") {
+    ret = SCardListReaders(hContext, NULL, NULL, NULL);
+
+    REQUIRE(ret == SCARD_S_SUCCESS);
+  }
+
+  SECTION("Failed return code"){
+    SetReturnCodeFor setReturnCodeFor("winscard", "SCardListReaders", SCARD_E_INVALID_HANDLE);
+
+    ret = SCardListReaders(hContext, NULL, NULL, NULL);
+
+    REQUIRE(ret == SCARD_E_INVALID_HANDLE);
+  }
+
+  SECTION("Check returned size") {
+    DWORD        tbcReadersSize = 0;
+    ret = SCardListReaders(hContext, NULL, NULL, &tbcReadersSize);
+
+    REQUIRE(readersSize == tbcReadersSize);
+  }
+
+  SECTION("Check returned readers") {
+    DWORD        tbcReadersSize = 33;
+    char         tbcReaders[33] = { 0x00 };
+    ret = SCardListReaders(hContext, NULL, tbcReaders, &tbcReadersSize);
+
+    REQUIRE(readersSize == tbcReadersSize);
+    REQUIRE(memcmp(tbcReaders, defaultReaders, 33) == 0);
+  }
+
+  ret = SCardReleaseContext(hContext);
 }

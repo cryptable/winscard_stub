@@ -3,6 +3,7 @@
 //
 #include <map>
 #include <cstring>
+#include <memory>
 #include "stubbing.h"
 
 using namespace std;
@@ -47,7 +48,7 @@ public:
    * @param impl
    * @return
    */
-  static Stubbing *instance_of(string &impl);
+  static unique_ptr<Stubbing> instance_of(string &impl);
 };
 
 inline Stubbing::~Stubbing() = default;
@@ -60,7 +61,7 @@ public:
   class MemBuffer {
   public:
     MemBuffer(const unsigned char *data, size_t data_lg) {
-      buffer = new unsigned char(data_lg);
+      buffer = new unsigned char[data_lg];
       memcpy(buffer, data, data_lg);
       buffer_size = data_lg;
     }
@@ -86,7 +87,7 @@ public:
     MemBuffer &operator=(MemBuffer &&data) noexcept {
       if (this!=&data) {
         // free local
-        delete buffer;
+        delete[] buffer;
         buffer_size = 0;
         // Move values
         buffer_size = data.buffer_size;
@@ -99,7 +100,7 @@ public:
     }
 
     ~MemBuffer() {
-      delete buffer;
+      delete[] buffer;
     }
 
     const unsigned char *getBuffer() const { return buffer; };
@@ -209,14 +210,14 @@ private:
 };
 
 
-Stubbing *Stubbing::instance_of(string &impl) {
+unique_ptr<Stubbing> Stubbing::instance_of(string &impl) {
   if (impl == "memory") {
-    return new StubbingMemory();
+    return unique_ptr<Stubbing>(new StubbingMemory());
   }
 }
 
 string stubbing_impl = string("memory");
-map<string, Stubbing *> g_modules;
+map<string, unique_ptr<Stubbing>> g_modules;
 
 #ifdef __cplusplus
 extern "C" {
