@@ -60,10 +60,13 @@ class StubbingMemory : public Stubbing {
 public:
   class MemBuffer {
   public:
-    MemBuffer(const unsigned char *data, size_t data_lg) {
-      buffer = new unsigned char[data_lg];
-      memcpy(buffer, data, data_lg);
-      buffer_size = data_lg;
+    MemBuffer(const unsigned char *data, size_t data_lg) : buffer_size(0), buffer(nullptr)  {
+      if ((data != nullptr) && (data_lg > 0))
+      {
+        buffer = new unsigned char[data_lg];
+        memcpy(buffer, data, data_lg);
+        buffer_size = data_lg;
+      }
     }
 
     MemBuffer(const MemBuffer &data) : buffer_size(0), buffer(nullptr) {
@@ -220,10 +223,22 @@ unique_ptr<Stubbing> Stubbing::instance_of(string &impl) {
 
 string stubbing_impl = string("memory");
 map<string, unique_ptr<Stubbing>> g_modules;
+bool g_active = true;
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+void set_stubbing_active(int active) {
+  if (active != 0)
+    g_active = true;
+  else
+    g_active = false;
+}
+
+int get_stubbing_active() {
+  return g_active ? 1 : 0;
+}
 
 void set_return_code_for(const char *module, const char *function, long ret) {
   try {
@@ -306,6 +321,10 @@ void clear_out_parameter_for(const char *module, const char *function, const cha
   catch (out_of_range &e) {
     // Ignore error
   }
+}
+
+void clear_modules() {
+  g_modules.clear();
 }
 
 #ifdef __cplusplus

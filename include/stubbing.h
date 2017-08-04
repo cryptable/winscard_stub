@@ -9,17 +9,54 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-void set_stubbing_active(const char *module);
 
+#ifndef FALSE
+#define FALSE 0
+#endif
+#ifndef TRUE
+#define TRUE 1
+#endif
+
+/**
+ * Set the stubbing active or not. Depends on the implementation if it uses the activation
+ * @param active (FALSE:0 to deactivate / TRUE:1 to activate), default it is activated
+ */
+void set_stubbing_active(int active);
+
+/**
+ * Used by the stubbing implementation to check the stubbing activation
+ * @return (FALSE:0 to deactivate / TRUE:1 to activate), default it is activated
+ */
+int get_stubbing_active();
+
+/**
+ * Set the return code for the function in the module (library) of the SDK which is stubbed
+ * @param module name of the stubbed module (library)
+ * @param function name of the stubbed function in the module
+ * @param ret return code which must be return by the function
+ */
 void set_return_code_for(const char *module, const char *function, long ret);
 
+/**
+ * Get the return code for usage in the stubbed function in the module
+ * @param module name of the stubbed module (library)
+ * @param function name of the stubbed function in the module
+ * @param default_ret default return code when return code is not set
+ * @return
+ */
 long get_return_code_for(const char *module, const char *function, long default_ret);
 
 void set_out_parameter_for(const char *module, const char *function, const char *parameter, const unsigned char *data, unsigned long data_lg);
 
 long get_out_parameter_for(const char *module, const char *function, const char *parameter, const unsigned char **data, unsigned long *data_lg);
 
+void clear_return_codes(const char *module);
+
+void clear_out_parameters(const char *module);
+
 void clear_stubbing(const char *module);
+
+void clear_modules();
 
 #ifdef __cplusplus
 };

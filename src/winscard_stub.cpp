@@ -7,6 +7,10 @@
 #include <cstring>
 #include <vector>
 #include <memory>
+#include <map>
+#include <unordered_map>
+#include <list>
+#include <unordered_set>
 
 #ifndef __FUNCTION_NAME__
   #ifdef WIN32   //WINDOWS
@@ -20,6 +24,55 @@
 #define SMARTCARD_READER_CONNECTED           1
 
 using namespace std;
+
+/**
+ * Smartcard simulator
+ */
+class SmartCard {
+public:
+  explicit SmartCard(DWORD dwSharingMode = SCARD_SHARE_SHARED, DWORD dwProtocol = SCARD_PROTOCOL_T0) :
+    sharingMode(dwSharingMode), protocol(dwProtocol), scardHandle(0) {
+
+  };
+
+  DWORD connect(DWORD dwShareMode, DWORD dwPreferredProtocols, LPSCARDHANDLE phCard, LPDWORD pdwActiveProtocol) {
+
+    if (dwShareMode != sharingMode) {
+      return SCARD_E_INVALID_VALUE;
+    }
+    if ((dwPreferredProtocols & protocol) != protocol) {
+      return SCARD_E_INVALID_VALUE;
+    }
+
+    scardHandles[++scardHandle] = 0;
+    *phCard = scardHandle;
+    *pdwActiveProtocol = protocol;
+    return SCARD_S_SUCCESS;
+  };
+
+  DWORD disconnect(SCARDHANDLE handle, DWORD disposition) {
+    if (scardHandles.erase(handle) == 0) {
+      return SCARD_E_INVALID_HANDLE;
+    }
+
+    return SCARD_S_SUCCESS;
+  }
+
+  virtual DWORD execute(const char *in_apdu, size_t in_apdu_lg, char **out_apdu, size_t *out_apd_lg) = 0;
+
+  /**
+   * Static member function for the factory method
+   * @param impl
+   * @return
+   */
+  static unique_ptr<SmartCard> instance_of(const string &impl);
+
+private:
+  SCARDHANDLE scardHandle;
+  unordered_map<SCARDHANDLE, int> scardHandles;
+  DWORD sharingMode;
+  DWORD protocol;
+};
 
 /**
  * Smartcard reader simulator
@@ -40,32 +93,42 @@ public:
 
   ~SmartCardReader() = default;
 
-  explicit SmartCardReader(string readerName);;
+  explicit SmartCardReader(string readerName): name(readerName), smartCard(nullptr) {
+
+  };
 
   string getName() const {
     return name;
   };
 
-  virtual void execute(const char *in_apdu, size_t in_apdu_lg, char **out_apdu, size_t *out_apd_lg) = 0;
+  DWORD connectToSmartCard(DWORD dwShareMode, DWORD dwPreferredProtocols, LPSCARDHANDLE phCard, LPDWORD pdwActiveProtocol) {
+    if (smartCard == nullptr) {
+      return SCARD_E_NO_SMARTCARD;
+    }
+    return smartCard->connect(dwShareMode, dwPreferredProtocols, phCard, pdwActiveProtocol);
+  };
+
+  DWORD disconnectFromSmartCard(SCARDHANDLE hCard, DWORD dwDisposition) {
+    if (smartCard == nullptr) {
+      return SCARD_E_NO_SMARTCARD;
+    }
+    return smartCard->disconnect(hCard, dwDisposition);
+  };
+
+  void insertCard(const string card) {
+    if (smartCard != nullptr) {
+      throw runtime_error("Smartcard already inserted");
+    }
+    smartCard = SmartCard::instance_of(card);
+  }
+
+  virtual DWORD execute(const char *in_apdu, size_t in_apdu_lg, char **out_apdu, size_t *out_apd_lg) = 0;
 
 protected:
   const string name;
 
 private:
-  unsigned int winscard_state;
-};
-
-SmartCardReader::SmartCardReader(string readerName) : name(std::move(readerName)),
-                                                      winscard_state(SMARTCARD_READER_NOT_CONNECTED) {
-
-}
-
-/**
- * Smartcard simulator
- */
-class SmartCard {
-
-private:
+  unique_ptr<SmartCard> smartCard;
 };
 
 /**
@@ -73,16 +136,16 @@ private:
  */
 class NonPinpadReader : public SmartCardReader {
 public:
+
   NonPinpadReader() : SmartCardReader("Non Pinpad Reader") {
 
   };
 
-  void execute(const char *in_apdu, size_t in_apdu_lg, char **out_apdu, size_t *out_apd_lg) override {
+  DWORD execute(const char *in_apdu, size_t in_apdu_lg, char **out_apdu, size_t *out_apd_lg) override {
     (void)in_apdu;
   }
 
 private:
-
 };
 
 /**
@@ -94,13 +157,31 @@ public:
 
   }
 
-  void execute(const char *in_apdu, size_t in_apdu_lg, char **out_apdu, size_t *out_apd_lg) override {
+  DWORD execute(const char *in_apdu, size_t in_apdu_lg, char **out_apdu, size_t *out_apd_lg) override {
 
   }
 
-private:
+};
+
+
+class BeidSmartCard : public SmartCard {
+public:
+  BeidSmartCard() : SmartCard() {
+  }
+
+  DWORD execute(const char *in_apdu, size_t in_apdu_lg, char **out_apdu, size_t *out_apd_lg) override {
+    return SCARD_E_UNSUPPORTED_FEATURE;
+  }
 
 };
+
+unique_ptr<SmartCard> SmartCard::instance_of(const string &impl) {
+  if (impl == "beid") {
+    return unique_ptr<SmartCard>(new BeidSmartCard());
+  }
+
+  return nullptr;
+}
 
 /**
  * Context to the winscard subsystem
@@ -109,14 +190,16 @@ class WinscardContext {
 
 public:
 
-  const vector<unique_ptr<SmartCardReader>> &getReaders() const {
+  const vector<shared_ptr<SmartCardReader>> &getReaders() const {
     return readers;
   }
 
   WinscardContext() {
-    readers.push_back(unique_ptr<PinpadReader>(new PinpadReader()));
-    readers.push_back(unique_ptr<NonPinpadReader>(new NonPinpadReader()));
+    readers.push_back(shared_ptr<PinpadReader>(new PinpadReader()));
+    readers.push_back(shared_ptr<NonPinpadReader>(new NonPinpadReader()));
     refreshReaderNames();
+    readers[0]->insertCard("beid");
+    readers[1]->insertCard("beid");
   }
 
   WinscardContext(WinscardContext &other) = delete;
@@ -136,8 +219,44 @@ public:
     *mszReaders = readerNames;
   }
 
+  DWORD connectToSmartCard(const char *readerName, DWORD dwShareMode, DWORD dwPreferredProtocols, LPSCARDHANDLE phCard, LPDWORD pdwActiveProtocol) {
+    DWORD ret = 0;
+
+    for (auto &reader : readers) {
+      if (reader->getName() == readerName) {
+        SCARDHANDLE hCard = 0;
+        ret = reader->connectToSmartCard(dwShareMode, dwPreferredProtocols, &hCard, pdwActiveProtocol);
+        if (ret == SCARD_S_SUCCESS) {
+          smartcards_ctx[++cardctx] = unique_ptr<struct scard_ctx>(new (struct scard_ctx){reader, hCard});
+          *phCard = cardctx;
+        }
+        return ret;
+      }
+    }
+    return SCARD_E_UNKNOWN_READER;
+  }
+
+  DWORD disconnectFromSmartCard(SCARDHANDLE hCard, DWORD dwDisposition) {
+
+    try {
+      DWORD ret = smartcards_ctx.at(hCard)->reader->disconnectFromSmartCard(smartcards_ctx.at(hCard)->scardhandle, dwDisposition);
+      smartcards_ctx.erase(hCard);
+      return ret;
+    }
+    catch (out_of_range &oor) {
+      return SCARD_E_INVALID_HANDLE;
+    }
+  }
+
 private:
-  vector<unique_ptr<SmartCardReader>> readers;
+  struct scard_ctx {
+    shared_ptr<SmartCardReader> reader;
+    SCARDHANDLE scardhandle;
+  };
+  unordered_map<SCARDHANDLE, unique_ptr<struct scard_ctx>> smartcards_ctx;
+  SCARDHANDLE cardctx = 0;
+
+  vector<shared_ptr<SmartCardReader>> readers;
   unsigned char *readerNames = nullptr;
   size_t readerNamesLg = 0;
 
@@ -168,15 +287,31 @@ private:
 /**
  * Winscard handles
  */
-unsigned int g_index = 0;
-vector<WinscardContext *> g_contexts;
+
+SCARDCONTEXT g_context_index = 1;
+unordered_map<SCARDCONTEXT, shared_ptr<WinscardContext>> g_contexts;
+
+SCARDHANDLE g_handle_index = 1;
+struct g_card_handle {
+  shared_ptr<WinscardContext> winscard_ctx;
+  SCARDHANDLE local_cardhandle;
+};
+unordered_map<SCARDHANDLE, unique_ptr<struct g_card_handle>> g_cardhandles;
 
 PCSC_API LONG SCardEstablishContext(DWORD dwScope, LPCVOID pvReserved1, LPCVOID pvReserved2, LPSCARDCONTEXT phContext)
 {
+  if (phContext == NULL) {
+    return get_return_code_for("winscard", __FUNCTION_NAME__, SCARD_E_INVALID_PARAMETER);
+  }
+  if ((dwScope != SCARD_SCOPE_USER)
+      && (dwScope != SCARD_SCOPE_TERMINAL)
+         && (dwScope != SCARD_SCOPE_SYSTEM)) {
+    return get_return_code_for("winscard", __FUNCTION_NAME__, SCARD_E_INVALID_VALUE);
+  }
   // Default behavior
-  *phContext = g_index;
-  g_contexts.push_back(new WinscardContext());
-  g_index++;
+  *phContext = g_context_index;
+  g_contexts[g_context_index] = shared_ptr<WinscardContext>(new WinscardContext());
+  g_context_index++;
 
   // Stubbed behavior
   return get_return_code_for("winscard", __FUNCTION_NAME__ ,SCARD_S_SUCCESS);
@@ -184,12 +319,8 @@ PCSC_API LONG SCardEstablishContext(DWORD dwScope, LPCVOID pvReserved1, LPCVOID 
 
 PCSC_API LONG SCardReleaseContext(SCARDCONTEXT hContext)
 {
-  // Default behavior
-  if (hContext < g_index) {
-    if (g_contexts[hContext] != nullptr) {
-      delete g_contexts[hContext];
-      g_contexts[hContext] = nullptr;
-    }
+  if (!g_contexts.erase(hContext)) {
+    return get_return_code_for("winscard", __FUNCTION_NAME__, SCARD_E_INVALID_HANDLE);
   }
 
   // Stubbed behavior
@@ -199,11 +330,8 @@ PCSC_API LONG SCardReleaseContext(SCARDCONTEXT hContext)
 PCSC_API LONG SCardIsValidContext(SCARDCONTEXT hContext)
 {
 
-  if (hContext >= g_index) {
-    return SCARD_E_INVALID_HANDLE;
-  }
-  if (g_contexts[hContext] == nullptr) {
-    return SCARD_E_INVALID_HANDLE;
+  if (g_contexts.find(hContext) == g_contexts.end()) {
+    return get_return_code_for("winscard", __FUNCTION_NAME__, SCARD_E_INVALID_HANDLE);
   }
 
   return get_return_code_for("winscard", __FUNCTION_NAME__ ,SCARD_S_SUCCESS);
@@ -211,8 +339,20 @@ PCSC_API LONG SCardIsValidContext(SCARDCONTEXT hContext)
 
 PCSC_API LONG SCardConnect(SCARDCONTEXT hContext, LPCSTR szReader, DWORD dwShareMode, DWORD dwPreferredProtocols, LPSCARDHANDLE phCard, LPDWORD pdwActiveProtocol)
 {
+  DWORD default_return = 0;
+  SCARDHANDLE hCard = 0;
 
-  return get_return_code_for("winscard", __FUNCTION_NAME__ ,SCARD_S_SUCCESS);
+  try {
+    default_return = g_contexts.at(hContext)->connectToSmartCard(szReader, dwShareMode, dwPreferredProtocols, &hCard, pdwActiveProtocol);
+    *phCard = g_handle_index;
+    g_cardhandles[g_handle_index] = unique_ptr<struct g_card_handle>(new (struct g_card_handle) {shared_ptr<WinscardContext>(g_contexts[hContext]), hCard});
+    g_handle_index++;
+  }
+  catch (out_of_range &oor) {
+    return get_return_code_for("winscard", __FUNCTION_NAME__, SCARD_E_INVALID_HANDLE);
+  }
+
+  return get_return_code_for("winscard", __FUNCTION_NAME__ , default_return);
 }
 
 PCSC_API LONG SCardReconnect(SCARDHANDLE hCard, DWORD dwShareMode, DWORD dwPreferredProtocols, DWORD dwInitialization, LPDWORD pdwActiveProtocol)
@@ -223,6 +363,13 @@ PCSC_API LONG SCardReconnect(SCARDHANDLE hCard, DWORD dwShareMode, DWORD dwPrefe
 
 PCSC_API LONG SCardDisconnect(SCARDHANDLE hCard, DWORD dwDisposition)
 {
+  DWORD default_return = 0;
+  try {
+    default_return = g_cardhandles.at(hCard)->winscard_ctx->disconnectFromSmartCard(g_cardhandles.at(hCard)->local_cardhandle, dwDisposition);
+  }
+  catch (out_of_range &oor) {
+    return get_return_code_for("winscard", __FUNCTION_NAME__, SCARD_E_INVALID_HANDLE);
+  }
 
   return get_return_code_for("winscard", __FUNCTION_NAME__ ,SCARD_S_SUCCESS);
 }
@@ -247,6 +394,12 @@ PCSC_API LONG SCardStatus(SCARDHANDLE hCard, LPSTR mszReaderName, LPDWORD pcchRe
 
 PCSC_API LONG SCardGetStatusChange(SCARDCONTEXT hContext, DWORD dwTimeout, SCARD_READERSTATE *rgReaderStates, DWORD cReaders)
 {
+  try {
+    g_contexts.at(hContext);
+  }
+  catch (out_of_range &oor) {
+    return get_return_code_for("winscard", __FUNCTION_NAME__, SCARD_E_INVALID_HANDLE);
+  }
 
   return get_return_code_for("winscard", __FUNCTION_NAME__ ,SCARD_S_SUCCESS);
 }
@@ -265,6 +418,12 @@ PCSC_API LONG SCardTransmit(SCARDHANDLE hCard, const SCARD_IO_REQUEST *pioSendPc
 
 PCSC_API LONG SCardListReaderGroups(SCARDCONTEXT hContext, LPSTR mszGroups, LPDWORD pcchGroups)
 {
+  try {
+    g_contexts.at(hContext);
+  }
+  catch (out_of_range &oor) {
+    return get_return_code_for("winscard", __FUNCTION_NAME__, SCARD_E_INVALID_HANDLE);
+  }
 
   return get_return_code_for("winscard", __FUNCTION_NAME__ ,SCARD_S_SUCCESS);
 }
@@ -274,10 +433,23 @@ PCSC_API LONG SCardListReaders(SCARDCONTEXT hContext, LPCSTR mszGroups, LPSTR ms
   const unsigned char *data = nullptr;
   unsigned long data_lg = 0;
 
-  // Overwritten function
   if (get_out_parameter_for("winscard", __FUNCTION_NAME__, "mszReaders", &data, &data_lg) == 0) {
-    g_contexts[hContext]->getReaderNames(&data, &data_lg);
+    // default behavior
+    try {
+      g_contexts.at(hContext)->getReaderNames(&data, &data_lg);
+    }
+    catch (out_of_range &oor) {
+      // clear output variables
+      if ((mszReaders != nullptr) && (pcchReaders != nullptr)) {
+        memset(mszReaders, '\0', *pcchReaders);
+      }
+      if (pcchReaders != nullptr) {
+        *pcchReaders = 0;
+      }
+      return get_return_code_for("winscard", __FUNCTION_NAME__, SCARD_E_INVALID_HANDLE);
+    }
   }
+
   if ((mszReaders != nullptr)
       && (pcchReaders != nullptr)
       && (*pcchReaders) >= data_lg) {
@@ -286,7 +458,6 @@ PCSC_API LONG SCardListReaders(SCARDCONTEXT hContext, LPCSTR mszGroups, LPSTR ms
   if (pcchReaders != nullptr) {
     *pcchReaders = data_lg;
   }
-
 
   return get_return_code_for("winscard", __FUNCTION_NAME__ ,SCARD_S_SUCCESS);
 }
