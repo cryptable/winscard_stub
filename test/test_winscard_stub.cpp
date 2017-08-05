@@ -5,6 +5,7 @@
 #include <winscard.h>
 #include "catch.hpp"
 #include "stubbing.h"
+#include "winscard_stub.h"
 
 TEST_CASE( "SCardEstablishContext() stubbing call", "[API]") {
   SCARDCONTEXT hContext = 0;
@@ -174,21 +175,48 @@ TEST_CASE( "SCardListReaders() for readers", "[API]") {
   ret = SCardReleaseContext(hContext);
 }
 
+bool verifyReaders(LPCSTR mszReaders1, LPCSTR mszReaders2) {
+  const char *p1 = mszReaders1;
+  const char *p2 = mszReaders2;
+  bool found = false;
+  while (*p1 != '\0') {
+    while (*p2 != '\0') {
+      if (strncmp(p1, p2, strlen(p1)) == 0) {
+        found = true;
+        break;
+      }
+      p2 += strlen(p2) + 1;
+    }
+    if (!found)
+      return false;
+    found = false;
+    p2 = mszReaders2;
+    p1 += strlen(p1) + 1;
+  }
+  return true;
+}
+
 TEST_CASE( "SCardListReaders() for default behaviour", "[API]") {
   SCARDCONTEXT hContext = 0;
   LONG         ret = 0;
-  DWORD readersSize = 33;
-  char defaultReaders[] = "Pinpad Reader\0Non Pinpad Reader\0\0";
+  DWORD readersSize = 37;
+  char defaultReaders[] = "Non Pinpad Reader 0\0Pinpad Reader 0\0\0";
 
   ret = SCardEstablishContext(SCARD_SCOPE_SYSTEM, NULL, NULL, &hContext);
 
   SECTION("Success") {
+    ret = SCardAttachReader(hContext, "Pinpad Reader");
+    ret = SCardAttachReader(hContext, "Non Pinpad Reader");
+
     ret = SCardListReaders(hContext, NULL, NULL, NULL);
 
     REQUIRE(ret == SCARD_S_SUCCESS);
   }
 
   SECTION("Failed return code"){
+    ret = SCardAttachReader(hContext, "Pinpad Reader");
+    ret = SCardAttachReader(hContext, "Non Pinpad Reader");
+
     SetReturnCodeFor setReturnCodeFor("winscard", "SCardListReaders", SCARD_E_INVALID_HANDLE);
 
     ret = SCardListReaders(hContext, NULL, NULL, NULL);
@@ -198,6 +226,9 @@ TEST_CASE( "SCardListReaders() for default behaviour", "[API]") {
 
   SECTION("Check returned size") {
     DWORD        tbcReadersSize = 0;
+    ret = SCardAttachReader(hContext, "Pinpad Reader");
+    ret = SCardAttachReader(hContext, "Non Pinpad Reader");
+
     ret = SCardListReaders(hContext, NULL, NULL, &tbcReadersSize);
 
     REQUIRE( ret == SCARD_S_SUCCESS );
@@ -205,22 +236,38 @@ TEST_CASE( "SCardListReaders() for default behaviour", "[API]") {
   }
 
   SECTION("Check returned readers") {
-    DWORD        tbcReadersSize = 33;
-    char         tbcReaders[33] = { 0x00 };
+    DWORD        tbcReadersSize = readersSize;
+    char         tbcReaders[sizeof(defaultReaders)] = { 0x00 };
+    ret = SCardAttachReader(hContext, "Pinpad Reader");
+    ret = SCardAttachReader(hContext, "Non Pinpad Reader");
+
     ret = SCardListReaders(hContext, NULL, tbcReaders, &tbcReadersSize);
 
     REQUIRE( ret == SCARD_S_SUCCESS );
     REQUIRE( readersSize == tbcReadersSize );
-    REQUIRE( memcmp(tbcReaders, defaultReaders, 33) == 0 );
+    REQUIRE( verifyReaders(defaultReaders, tbcReaders) );
   }
 
   SECTION("Check invalid handle") {
-    DWORD        tbcReadersSize = 33;
-    char         tbcReaders[33] = { 0x00 };
+    DWORD        tbcReadersSize = readersSize;
+    char         tbcReaders[sizeof(defaultReaders)] = { 0x00 };
 
+    ret = SCardAttachReader(hContext, "Pinpad Reader");
+    ret = SCardAttachReader(hContext, "Non Pinpad Reader");
     ret = SCardListReaders(hContext + 1, NULL, tbcReaders, &tbcReadersSize);
 
     REQUIRE( ret == SCARD_E_INVALID_HANDLE );
+    REQUIRE( tbcReadersSize == 0 );
+    REQUIRE( tbcReaders[0] == 0 );
+  }
+
+  SECTION("Check no readers attached") {
+    DWORD        tbcReadersSize = readersSize;
+    char         tbcReaders[sizeof(defaultReaders)] = { 0x00 };
+
+    ret = SCardListReaders(hContext, NULL, tbcReaders, &tbcReadersSize);
+
+    REQUIRE( ret == SCARD_E_NO_READERS_AVAILABLE );
     REQUIRE( tbcReadersSize == 0 );
     REQUIRE( tbcReaders[0] == 0 );
   }
@@ -231,9 +278,12 @@ TEST_CASE( "SCardListReaders() for default behaviour", "[API]") {
 TEST_CASE( "SCardConnect() testing for default behaviour", "[API]") {
   SCARDCONTEXT hContext = 0;
   LONG         ret = 0;
-  char         defaultReader[] = "Non Pinpad Reader";
+  char         defaultReader[] = "Non Pinpad Reader 0";
 
   ret = SCardEstablishContext(SCARD_SCOPE_SYSTEM, NULL, NULL, &hContext);
+  ret = SCardAttachReader(hContext, "Non Pinpad Reader");
+  ret = SCardAttachReader(hContext, "Pinpad Reader");
+  ret = SCardInsertSmartCardInReader(hContext, "Non Pinpad Reader 0", "test");
 
   SECTION("Success") {
     SCARDHANDLE dwCardHandle = 0;
@@ -244,7 +294,204 @@ TEST_CASE( "SCardConnect() testing for default behaviour", "[API]") {
     REQUIRE(ret == SCARD_S_SUCCESS);
     REQUIRE(dwCardHandle != 0);
     REQUIRE(dwActiveProtocol == SCARD_PROTOCOL_T0);
+
+    ret= SCardDisconnect(dwCardHandle, SCARD_LEAVE_CARD);
   }
 
+  SECTION("Success with second reader") {
+    SCARDHANDLE dwCardHandle = 0;
+    DWORD       dwActiveProtocol = 0;
+
+    ret = SCardAttachReader(hContext, "Pinpad Reader");
+    ret = SCardInsertSmartCardInReader(hContext, "Pinpad Reader 1", "test");
+
+    ret = SCardConnect(hContext, "Pinpad Reader 1", SCARD_SHARE_SHARED, SCARD_PROTOCOL_T0, &dwCardHandle, &dwActiveProtocol);
+
+    REQUIRE(ret == SCARD_S_SUCCESS);
+    REQUIRE(dwCardHandle != 0);
+    REQUIRE(dwActiveProtocol == SCARD_PROTOCOL_T0);
+
+    ret= SCardDisconnect(dwCardHandle, SCARD_LEAVE_CARD);
+  }
+
+  SECTION("Failed with invalid reader") {
+    SCARDHANDLE dwCardHandle = 0;
+    DWORD       dwActiveProtocol = 0;
+
+    ret = SCardConnect(hContext, "Wrong Reader", SCARD_SHARE_SHARED, SCARD_PROTOCOL_T0, &dwCardHandle, &dwActiveProtocol);
+
+    REQUIRE(ret == SCARD_E_UNKNOWN_READER);
+  }
+
+  SECTION("Failed with empty reader") {
+    SCARDHANDLE dwCardHandle = 0;
+    DWORD       dwActiveProtocol = 0;
+
+    ret = SCardConnect(hContext, "Pinpad Reader 0", SCARD_SHARE_SHARED, SCARD_PROTOCOL_T0, &dwCardHandle, &dwActiveProtocol);
+
+    REQUIRE(ret == SCARD_E_NO_SMARTCARD);
+  }
+
+  SECTION("Failed with invalid handle") {
+    SCARDHANDLE dwCardHandle = 0;
+    DWORD       dwActiveProtocol = 0;
+
+    ret = SCardConnect(hContext + 1, "Pinpad Reader 0", SCARD_SHARE_SHARED, SCARD_PROTOCOL_T0, &dwCardHandle, &dwActiveProtocol);
+
+    REQUIRE(ret == SCARD_E_INVALID_HANDLE);
+  }
+
+  SECTION("Failed with invalid shared mode") {
+    SCARDHANDLE dwCardHandle = 0;
+    DWORD       dwActiveProtocol = 0;
+
+    ret = SCardInsertSmartCardInReader(hContext, "Pinpad Reader 0", "test");
+
+    ret = SCardConnect(hContext, "Pinpad Reader 0", SCARD_SHARE_EXCLUSIVE, SCARD_PROTOCOL_T0, &dwCardHandle, &dwActiveProtocol);
+
+    REQUIRE(ret == SCARD_E_INVALID_VALUE);
+  }
+
+  SECTION("Failed with invalid protocol") {
+    SCARDHANDLE dwCardHandle = 0;
+    DWORD       dwActiveProtocol = 0;
+
+    ret = SCardInsertSmartCardInReader(hContext, "Pinpad Reader 0", "test");
+
+    ret = SCardConnect(hContext, "Pinpad Reader 0", SCARD_SHARE_EXCLUSIVE, SCARD_PROTOCOL_T1, &dwCardHandle, &dwActiveProtocol);
+
+    REQUIRE(ret == SCARD_E_INVALID_VALUE);
+  }
+
+  ret = SCardReleaseContext(hContext);
+}
+
+TEST_CASE( "SCardAttachReader() testing for default behaviour", "[API]") {
+  SCARDCONTEXT hContext = 0;
+  LONG         ret = 0;
+
+  ret = SCardEstablishContext(SCARD_SCOPE_SYSTEM, NULL, NULL, &hContext);
+
+  SECTION("Success") {
+    char defaultReaders[] = "Non Pinpad Reader 0\0";
+    char tbcReaders[sizeof(defaultReaders)] = { 0x00 };
+    DWORD tbcReadersLg = sizeof(defaultReaders);
+
+    ret = SCardAttachReader(hContext, "Non Pinpad Reader");
+    REQUIRE( ret == SCARD_S_SUCCESS );
+
+    ret = SCardListReaders(hContext, NULL, tbcReaders, &tbcReadersLg);
+
+    REQUIRE( sizeof(defaultReaders) == tbcReadersLg );
+    REQUIRE( verifyReaders(tbcReaders, defaultReaders) );
+  }
+
+  SECTION("Success with 2 different readers") {
+    char defaultReaders[] = "Non Pinpad Reader 0\0Pinpad Reader 0\0";
+    char tbcReaders[sizeof(defaultReaders)] = { 0x00 };
+    DWORD tbcReadersLg = sizeof(defaultReaders);
+
+    ret = SCardAttachReader(hContext, "Non Pinpad Reader");
+    REQUIRE( ret == SCARD_S_SUCCESS );
+    ret = SCardAttachReader(hContext, "Pinpad Reader");
+    REQUIRE( ret == SCARD_S_SUCCESS );
+
+    ret = SCardListReaders(hContext, NULL, tbcReaders, &tbcReadersLg);
+
+    REQUIRE( sizeof(defaultReaders) == tbcReadersLg );
+    REQUIRE( verifyReaders(tbcReaders, defaultReaders) );
+  }
+
+  SECTION("Success with 3 readers where 2 the same") {
+    char defaultReaders[] = "Non Pinpad Reader 0\0Pinpad Reader 0\0Pinpad Reader 1\0";
+    char tbcReaders[sizeof(defaultReaders)] = { 0x00 };
+    DWORD tbcReadersLg = sizeof(defaultReaders);
+
+    ret = SCardAttachReader(hContext, "Non Pinpad Reader");
+    REQUIRE( ret == SCARD_S_SUCCESS );
+    ret = SCardAttachReader(hContext, "Pinpad Reader");
+    REQUIRE( ret == SCARD_S_SUCCESS );
+    ret = SCardAttachReader(hContext, "Pinpad Reader");
+    REQUIRE( ret == SCARD_S_SUCCESS );
+
+    ret = SCardListReaders(hContext, NULL, tbcReaders, &tbcReadersLg);
+
+    REQUIRE( sizeof(defaultReaders) == tbcReadersLg );
+    REQUIRE( verifyReaders(tbcReaders, defaultReaders) );
+  }
+
+  SECTION("Fail with unknown reader") {
+    char defaultReaders[] = "Non Pinpad Reader 0\0";
+    char tbcReaders[sizeof(defaultReaders)] = { 0x00 };
+    DWORD tbcReadersLg = sizeof(defaultReaders);
+
+    ret = SCardAttachReader(hContext, "Unknown Pinpad Reader");
+    REQUIRE( ret == SCARD_E_UNKNOWN_READER );
+  }
+
+  SECTION("Fail with invalid handle") {
+    char defaultReaders[] = "Non Pinpad Reader 0\0";
+    char tbcReaders[sizeof(defaultReaders)] = { 0x00 };
+    DWORD tbcReadersLg = sizeof(defaultReaders);
+
+    ret = SCardAttachReader(hContext + 1, "Unknown Pinpad Reader");
+    REQUIRE( ret == SCARD_E_INVALID_HANDLE );
+  }
+
+  ret = SCardReleaseContext(hContext);
+}
+
+TEST_CASE( "SCardInsertSmartCardInReader() testing for default behaviour", "[API]") {
+  SCARDCONTEXT hContext = 0;
+  LONG         ret = 0;
+
+  ret = SCardEstablishContext(SCARD_SCOPE_SYSTEM, NULL, NULL, &hContext);
+
+  SECTION("Success") {
+    ret = SCardAttachReader(hContext, "Non Pinpad Reader");
+
+    ret = SCardInsertSmartCardInReader(hContext, "Non Pinpad Reader 0", "test");
+    REQUIRE( ret == SCARD_S_SUCCESS );
+  }
+
+  SECTION("Success with 2 different readers") {
+    ret = SCardAttachReader(hContext, "Non Pinpad Reader");
+    ret = SCardAttachReader(hContext, "Pinpad Reader");
+
+    ret = SCardInsertSmartCardInReader(hContext, "Non Pinpad Reader 0", "test");
+    REQUIRE( ret == SCARD_S_SUCCESS );
+  }
+
+  SECTION("Success with 3 readers where 2 same readers") {
+    ret = SCardAttachReader(hContext, "Non Pinpad Reader");
+    ret = SCardAttachReader(hContext, "Pinpad Reader");
+    ret = SCardAttachReader(hContext, "Pinpad Reader");
+
+    ret = SCardInsertSmartCardInReader(hContext, "Pinpad Reader 1", "test");
+    REQUIRE( ret == SCARD_S_SUCCESS );
+  }
+
+  SECTION("Fail with unknown card") {
+    ret = SCardAttachReader(hContext, "Non Pinpad Reader");
+
+    ret = SCardInsertSmartCardInReader(hContext, "Non Pinpad Reader 0", "unknown");
+    REQUIRE( ret == SCARD_E_CARD_UNSUPPORTED );
+  }
+
+  SECTION("Fail with invalid handle") {
+    ret = SCardAttachReader(hContext, "Non Pinpad Reader");
+
+    ret = SCardInsertSmartCardInReader(hContext + 1, "Non Pinpad Reader 0", "test");
+    REQUIRE( ret == SCARD_E_INVALID_HANDLE );
+  }
+
+  SECTION("Fail with card already in reader") {
+    ret = SCardAttachReader(hContext, "Non Pinpad Reader");
+
+    ret = SCardInsertSmartCardInReader(hContext, "Non Pinpad Reader 0", "test");
+    REQUIRE( ret == SCARD_S_SUCCESS );
+    ret = SCardInsertSmartCardInReader(hContext, "Non Pinpad Reader 0", "test");
+    REQUIRE( ret == SCARD_E_CARD_IN_READER );
+  }
   ret = SCardReleaseContext(hContext);
 }

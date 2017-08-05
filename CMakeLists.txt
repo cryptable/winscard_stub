@@ -2,11 +2,11 @@ cmake_minimum_required(VERSION 3.5)
 project(winscard_stub)
 
 set (CMAKE_CXX_STANDARD 11)
-set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra")
+set (CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS} -Wall -Wextra")
 
 include_directories(${PROJECT_SOURCE_DIR}/include /usr/include/PCSC)
 
-set(SOURCE_FILES src/winscard_stub.cpp include/winscard_stub.h src/stubbing.cpp include/stubbing.h)
+set(SOURCE_FILES src/winscard_stub.cpp include/winscard_stub.h src/stubbing.cpp include/stubbing.h include/missing_stl.h)
 
 add_library(winscard_stub ${SOURCE_FILES})
 

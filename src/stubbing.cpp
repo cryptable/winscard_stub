@@ -221,7 +221,7 @@ unique_ptr<Stubbing> Stubbing::instance_of(string &impl) {
   return nullptr;
 }
 
-string stubbing_impl = string("memory");
+auto stubbing_impl = string("memory");
 map<string, unique_ptr<Stubbing>> g_modules;
 bool g_active = true;
 
@@ -230,10 +230,7 @@ extern "C" {
 #endif
 
 void set_stubbing_active(int active) {
-  if (active != 0)
-    g_active = true;
-  else
-    g_active = false;
+  g_active = 0 != active;
 }
 
 int get_stubbing_active() {
