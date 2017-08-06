@@ -495,3 +495,163 @@ TEST_CASE( "SCardInsertSmartCardInReader() testing for default behaviour", "[API
   }
   ret = SCardReleaseContext(hContext);
 }
+
+TEST_CASE( "SCardDisconnect() testing for default behaviour", "[API]") {
+  SCARDCONTEXT hContext = 0;
+  LONG         ret = 0;
+
+  ret = SCardEstablishContext(SCARD_SCOPE_SYSTEM, NULL, NULL, &hContext);
+  ret = SCardAttachReader(hContext, "Non Pinpad Reader");
+  ret = SCardAttachReader(hContext, "Pinpad Reader");
+  ret = SCardInsertSmartCardInReader(hContext, "Non Pinpad Reader 0", "test");
+  ret = SCardInsertSmartCardInReader(hContext, "Pinpad Reader 0", "test");
+
+  SECTION("Success") {
+    SCARDHANDLE dwCardHandle = 0;
+    DWORD       dwActiveProtocol = 0;
+    DWORD       dwDisposition = SCARD_LEAVE_CARD;
+    ret = SCardConnect(hContext, "Non Pinpad Reader 0", SCARD_SHARE_SHARED, SCARD_PROTOCOL_T0, &dwCardHandle, &dwActiveProtocol);
+
+    ret = SCardDisconnect(dwCardHandle, dwDisposition);
+    REQUIRE(ret == SCARD_S_SUCCESS);
+  }
+
+  SECTION("Success mutliple cardhandles") {
+    SCARDHANDLE dwCardHandle1 {0};
+    SCARDHANDLE dwCardHandle2 {0};
+    DWORD       dwActiveProtocol {0};
+    DWORD       dwDisposition = SCARD_LEAVE_CARD;
+    ret = SCardConnect(hContext, "Non Pinpad Reader 0", SCARD_SHARE_SHARED, SCARD_PROTOCOL_T0, &dwCardHandle1, &dwActiveProtocol);
+    REQUIRE(ret == SCARD_S_SUCCESS);
+    ret = SCardConnect(hContext, "Pinpad Reader 0", SCARD_SHARE_SHARED, SCARD_PROTOCOL_T0, &dwCardHandle2, &dwActiveProtocol);
+    REQUIRE(ret == SCARD_S_SUCCESS);
+
+    ret = SCardDisconnect(dwCardHandle2, dwDisposition);
+    REQUIRE(ret == SCARD_S_SUCCESS);
+    ret = SCardDisconnect(dwCardHandle1, dwDisposition);
+    REQUIRE(ret == SCARD_S_SUCCESS);
+  }
+
+  SECTION("Failed mutliple cardhandles disconnect 2 times the same card") {
+    SCARDHANDLE dwCardHandle1 {0};
+    SCARDHANDLE dwCardHandle2 {0};
+    DWORD       dwActiveProtocol {0};
+    DWORD       dwDisposition = SCARD_LEAVE_CARD;
+    ret = SCardConnect(hContext, "Non Pinpad Reader 0", SCARD_SHARE_SHARED, SCARD_PROTOCOL_T0, &dwCardHandle1, &dwActiveProtocol);
+    REQUIRE(ret == SCARD_S_SUCCESS);
+    ret = SCardConnect(hContext, "Pinpad Reader 0", SCARD_SHARE_SHARED, SCARD_PROTOCOL_T0, &dwCardHandle2, &dwActiveProtocol);
+    REQUIRE(ret == SCARD_S_SUCCESS);
+
+    ret = SCardDisconnect(dwCardHandle2, dwDisposition);
+    REQUIRE(ret == SCARD_S_SUCCESS);
+    ret = SCardDisconnect(dwCardHandle2, dwDisposition);
+    REQUIRE(ret == SCARD_E_INVALID_HANDLE);
+    ret = SCardDisconnect(dwCardHandle1, dwDisposition);
+    REQUIRE(ret == SCARD_S_SUCCESS);
+  }
+
+  SECTION("Success disconnect with ejecting the card") {
+    SCARDHANDLE dwCardHandle {0};
+    DWORD       dwActiveProtocol {0};
+    DWORD       dwDisposition = SCARD_EJECT_CARD;
+
+    ret = SCardConnect(hContext, "Non Pinpad Reader 0", SCARD_SHARE_SHARED, SCARD_PROTOCOL_T0, &dwCardHandle, &dwActiveProtocol);
+    REQUIRE(ret == SCARD_S_SUCCESS);
+    ret = SCardDisconnect(dwCardHandle, dwDisposition);
+    REQUIRE(ret == SCARD_S_SUCCESS);
+    ret = SCardConnect(hContext, "Non Pinpad Reader 0", SCARD_SHARE_SHARED, SCARD_PROTOCOL_T0, &dwCardHandle, &dwActiveProtocol);
+    REQUIRE(ret == SCARD_E_NO_SMARTCARD);
+  }
+
+  SECTION("Fail with invalid handle") {
+    SCARDHANDLE dwCardHandle {0};
+    DWORD       dwActiveProtocol {0};
+    DWORD       dwDisposition = SCARD_EJECT_CARD;
+
+    ret = SCardConnect(hContext, "Non Pinpad Reader 0", SCARD_SHARE_SHARED, SCARD_PROTOCOL_T0, &dwCardHandle, &dwActiveProtocol);
+    REQUIRE(ret == SCARD_S_SUCCESS);
+    ret = SCardDisconnect(dwCardHandle + 1, dwDisposition);
+    REQUIRE(ret == SCARD_E_INVALID_HANDLE);
+    ret = SCardDisconnect(dwCardHandle, dwDisposition);
+  }
+
+  ret = SCardReleaseContext(hContext);
+}
+
+TEST_CASE( "SCardBeginTransaction() testing for default behaviour", "[API]") {
+  SCARDCONTEXT hContext = 0;
+  LONG         ret = 0;
+  SCARDHANDLE dwCardHandle = 0;
+  DWORD       dwActiveProtocol = 0;
+  DWORD       dwDisposition = SCARD_LEAVE_CARD;
+
+  ret = SCardEstablishContext(SCARD_SCOPE_SYSTEM, NULL, NULL, &hContext);
+  ret = SCardAttachReader(hContext, "Non Pinpad Reader");
+  ret = SCardAttachReader(hContext, "Pinpad Reader");
+  ret = SCardInsertSmartCardInReader(hContext, "Non Pinpad Reader 0", "test");
+  ret = SCardConnect(hContext, "Non Pinpad Reader 0", SCARD_SHARE_SHARED, SCARD_PROTOCOL_T0, &dwCardHandle, &dwActiveProtocol);
+
+  SECTION("Success") {
+    ret = SCardBeginTransaction(dwCardHandle);
+
+    REQUIRE(ret == SCARD_S_SUCCESS);
+
+    ret = SCardEndTransaction(dwCardHandle, SCARD_LEAVE_CARD);
+  }
+
+  SECTION("Fail invalid handle") {
+    ret = SCardBeginTransaction(dwCardHandle + 1);
+
+    REQUIRE(ret == SCARD_E_INVALID_HANDLE);
+  }
+
+  SECTION("Fail with sharing violation, transaction already begun") {
+    SCARDHANDLE dwCardHandle2 = 0;
+
+    ret = SCardInsertSmartCardInReader(hContext, "Pinpad Reader 0", "test");
+    ret = SCardConnect(hContext, "Pinpad Reader 0", SCARD_SHARE_SHARED, SCARD_PROTOCOL_T0, &dwCardHandle2, &dwActiveProtocol);
+
+    ret = SCardBeginTransaction(dwCardHandle2);
+    REQUIRE(ret == SCARD_S_SUCCESS);
+    ret = SCardEndTransaction(dwCardHandle2, SCARD_EJECT_CARD);
+    REQUIRE(ret == SCARD_S_SUCCESS);
+    ret = SCardBeginTransaction(dwCardHandle2);
+    REQUIRE(ret == SCARD_E_NO_SMARTCARD);
+
+  }
+
+  ret = SCardDisconnect(dwCardHandle, dwDisposition);
+  ret = SCardReleaseContext(hContext);
+}
+
+TEST_CASE( "SCardEndTransaction() testing for default behaviour", "[API]") {
+  SCARDCONTEXT hContext = 0;
+  LONG         ret = 0;
+  SCARDHANDLE dwCardHandle = 0;
+  DWORD       dwActiveProtocol = 0;
+  DWORD       dwDisposition = SCARD_LEAVE_CARD;
+
+  ret = SCardEstablishContext(SCARD_SCOPE_SYSTEM, NULL, NULL, &hContext);
+  ret = SCardAttachReader(hContext, "Non Pinpad Reader");
+  ret = SCardAttachReader(hContext, "Pinpad Reader");
+  ret = SCardInsertSmartCardInReader(hContext, "Non Pinpad Reader 0", "test");
+  ret = SCardConnect(hContext, "Non Pinpad Reader 0", SCARD_SHARE_SHARED, SCARD_PROTOCOL_T0, &dwCardHandle, &dwActiveProtocol);
+
+  SECTION("Success") {
+    ret = SCardBeginTransaction(dwCardHandle);
+    ret = SCardEndTransaction(dwCardHandle, SCARD_LEAVE_CARD);
+    REQUIRE(ret == SCARD_S_SUCCESS);
+  }
+
+  SECTION("Fail invalid handle") {
+    ret = SCardBeginTransaction(dwCardHandle);
+
+    ret = SCardEndTransaction(dwCardHandle + 1, SCARD_LEAVE_CARD);
+
+    REQUIRE(ret == SCARD_E_INVALID_HANDLE);
+    ret = SCardEndTransaction(dwCardHandle, SCARD_LEAVE_CARD);
+  }
+
+  ret = SCardDisconnect(dwCardHandle, dwDisposition);
+  ret = SCardReleaseContext(hContext);
+}

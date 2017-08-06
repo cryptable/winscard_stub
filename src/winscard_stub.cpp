@@ -25,56 +25,142 @@
 using namespace std;
 
 /**
- * Smartcard simulator
+ * Smartcard virtual simulator base class. The specific implemenations wlll have to override the execute
+ * function
  */
 class SmartCard {
 public:
+  /**
+   * Constructor which will define the behavior of sharing mode and the supported protocols
+   * Must be called by the derived class
+   * @param dwSharingMode
+   * @param dwProtocol
+   */
   explicit SmartCard(DWORD dwSharingMode = SCARD_SHARE_SHARED, DWORD dwProtocol = SCARD_PROTOCOL_T0) :
-    sharingMode(dwSharingMode), protocol(dwProtocol) {
-
+    allowedSharingModes(dwSharingMode),
+    allowedProtocol (dwProtocol),
+    disposition(SCARD_LEAVE_CARD) {
   };
 
+  /**
+   * Connect to the smartcard, which will verify the supported sharingMode and protocols. The connect function returns
+   * a handle to the smartcard and the active protocol.
+   *
+   * @param dwShareMode
+   * @param dwPreferredProtocols
+   * @param phCard
+   * @param pdwActiveProtocol
+   * @return SCARD_S_SUCCESS, SCARD_E_INVALID_VALUE
+   */
   DWORD connect(DWORD dwShareMode, DWORD dwPreferredProtocols, LPSCARDHANDLE phCard, LPDWORD pdwActiveProtocol) {
 
-    if (dwShareMode != sharingMode) {
+    if (dwShareMode != allowedSharingModes) {
       return static_cast<DWORD>(SCARD_E_INVALID_VALUE);
     }
-    if ((dwPreferredProtocols & protocol) != protocol) {
+    if ((dwPreferredProtocols & allowedProtocol) != allowedProtocol) {
       return static_cast<DWORD>(SCARD_E_INVALID_VALUE);
     }
 
-    scardHandles[++scardHandle] = 0;
-    *phCard = scardHandle;
-    *pdwActiveProtocol = protocol;
+    scardHandles[++scardHandleIndex] = make_unique<struct SmartCardContext>(dwShareMode, allowedProtocol, false);
+    *phCard = scardHandleIndex;
+    *pdwActiveProtocol = allowedProtocol;
+
     return SCARD_S_SUCCESS;
   };
 
-  DWORD disconnect(SCARDHANDLE handle, DWORD disposition) {
+  /**
+   * Disconnect from the smartcard with extra action to take for the card during the disconnect
+   *
+   * @param handle The handle of the Smartcard to disconnect
+   * @param disposition action to take of the smartcard
+   * @return SCARD_S_SUCCESS, SCARD_E_INVALID_HANDLE
+   */
+  DWORD disconnect(SCARDHANDLE handle, DWORD dwDisposition) {
     if (scardHandles.erase(handle) == 0) {
       return static_cast<DWORD>(SCARD_E_INVALID_HANDLE);
     }
-
+    disposition = dwDisposition;
     return SCARD_S_SUCCESS;
   }
 
-  virtual DWORD execute(const char *in_apdu, size_t in_apdu_lg, char **out_apdu, size_t *out_apd_lg) = 0;
+  /**
+   * Begin multiple calls to the Smartcard
+   * @param handle The handle to the smartcard
+   * @return SCARD_S_SUCCESS, SCARD_E_SHARING_VIOLATION, SCARD_E_INVALID_HANDLE
+   */
+  DWORD beginTransaction(SCARDHANDLE handle) {
+    try {
+      if (scardHandles.at(handle)->transaction)
+        return SCARD_E_SHARING_VIOLATION;
+
+      scardHandles.at(handle)->transaction = true;
+      return SCARD_S_SUCCESS;
+    }
+    catch (out_of_range &oor) {
+      return SCARD_E_INVALID_HANDLE;
+    }
+  }
 
   /**
-   * Static member function for the factory method
+   * End multiple calls to the Smartcard
+   * @param handle The handle to the smartcard
+   * @return SCARD_S_SUCCESS, SCARD_E_SHARING_VIOLATION, SCARD_E_INVALID_HANDLE
+   */
+  DWORD endTransaction(SCARDHANDLE handle, DWORD dwDisposition) {
+    try {
+      if (!scardHandles.at(handle)->transaction)
+        return SCARD_E_NOT_TRANSACTED;
+
+      scardHandles.at(handle)->transaction = false;
+      disposition = dwDisposition;
+
+      if (disposition == SCARD_RESET_CARD)
+        return SCARD_W_RESET_CARD;
+
+      return SCARD_S_SUCCESS;
+    }
+    catch (out_of_range &oor) {
+      return SCARD_E_INVALID_HANDLE;
+    }
+  }
+
+  /**
+   * Function to override by the specific implemented Smartcard.
+   *
+   * @param scardhandle handle to the smartcard
+   * @param in_apdu APDU command
+   * @param in_apdu_lg length of the APDU command
+   * @param out_apdu APDU result
+   * @param out_apd_lg length of the APDU result
+   * @return SCARD_S_SUCCESS
+   */
+  virtual DWORD execute(SCARDHANDLE handle, const char *in_apdu, size_t in_apdu_lg, char **out_apdu, size_t *out_apd_lg) = 0;
+
+  /**
+   * Static member function for the factory method to instantiate the supported Smartcards.
    * @param impl
-   * @return
+   * @return smart pointer to the SmartCard object
    */
   static unique_ptr<SmartCard> instance_of(const string &impl);
 
 private:
-  SCARDHANDLE scardHandle{0};
-  unordered_map<SCARDHANDLE, int> scardHandles;
-  DWORD sharingMode;
-  DWORD protocol;
+
+  struct SmartCardContext {
+    DWORD sharingMode;
+    DWORD protocol;
+    bool  transaction;
+  };
+
+  SCARDHANDLE scardHandleIndex{0};
+  unordered_map<SCARDHANDLE, unique_ptr<SmartCardContext>> scardHandles;
+  DWORD allowedSharingModes;
+  DWORD allowedProtocol;
+  DWORD disposition;
 };
 
 /**
- * Smartcard reader simulator
+ * Smartcard reader simulator: This class will be the base class for the reader implementation. In a reader only 1 card
+ * can be inserted. All calls from the winscard interface will  be proxied through the reader implementation.
  */
 class SmartCardReader {
 
@@ -92,14 +178,33 @@ public:
 
   ~SmartCardReader() = default;
 
+  /**
+   * Constructor of Smartcard to be called by the derived class
+   *
+   * @param readerName
+   */
   explicit SmartCardReader(string readerName): name(std::move(readerName)), smartCard(nullptr) {
 
   };
 
+  /**
+   * Returns the default name of the reader and will be used by 'winscard' create a unique reader name
+   *
+   * @return
+   */
   string getName() const {
     return name;
   };
 
+  /**
+   * Proxy function to connect to the Smartcard all parameters are send to the smartcard.
+   *
+   * @param dwShareMode
+   * @param dwPreferredProtocols
+   * @param phCard
+   * @param pdwActiveProtocol
+   * @return SCARD_S_SUCCESS, SCARD_E_NO_SMARTCARD
+   */
   DWORD connectToSmartCard(DWORD dwShareMode, DWORD dwPreferredProtocols, LPSCARDHANDLE phCard, LPDWORD pdwActiveProtocol) {
     if (smartCard == nullptr) {
       return static_cast<DWORD>(SCARD_E_NO_SMARTCARD);
@@ -107,13 +212,32 @@ public:
     return smartCard->connect(dwShareMode, dwPreferredProtocols, phCard, pdwActiveProtocol);
   };
 
+  /**
+   * Proxy function to disconnect from the Smartcard all parameters are send to the smartcard.
+   *
+   * @param dwShareMode (see SmartCard base class)
+   * @param dwPreferredProtocols (see SmartCard base class)
+   * @param phCard (see SmartCard base class)
+   * @param pdwActiveProtocol (see SmartCard base class)
+   * @return SCARD_S_SUCCESS, SCARD_E_NO_SMARTCARD
+   */
   DWORD disconnectFromSmartCard(SCARDHANDLE hCard, DWORD dwDisposition) {
     if (smartCard == nullptr) {
       return static_cast<DWORD>(SCARD_E_NO_SMARTCARD);
     }
-    return smartCard->disconnect(hCard, dwDisposition);
+    int ret = smartCard->disconnect(hCard, dwDisposition);
+    if (dwDisposition == SCARD_EJECT_CARD) {
+      smartCard.reset(nullptr);
+    }
+    return ret;
   };
 
+  /**
+   * Function which inserts a Smartcard into the reader
+   *
+   * @param card name of one of the implemented cards ("test")
+   * @return SCARD_S_SUCCESS, SCARD_E_CARD_IN_READER, SCARD_E_CARD_UNSUPPORTED
+   */
   DWORD insertCard(const string &card) {
     if (nullptr != smartCard) {
       return static_cast<DWORD>(SCARD_E_CARD_IN_READER);
@@ -125,8 +249,55 @@ public:
     return SCARD_S_SUCCESS;
   }
 
-  virtual DWORD execute(const char *in_apdu, size_t in_apdu_lg, char **out_apdu, size_t *out_apd_lg) = 0;
+  /**
+   * Proxy begin transaction to the smartcard
+   *
+   * @param scardhandle handle to the scmartcard
+   * @return SCARD_S_SUCCESS, SCARD_E_NO_SMARTCARD + errors of Smartcard
+   */
+  DWORD beginTransactionOnSmartcard(SCARDHANDLE scardhandle) {
+    if (smartCard == nullptr) {
+      return static_cast<DWORD>(SCARD_E_NO_SMARTCARD);
+    }
+    return smartCard->beginTransaction(scardhandle);
+  }
 
+  /**
+   * Proxy end transaction to the smartcard if SCARD_EJECT_CARD is send as dwDisposition, the smartcard is removed
+   *
+   * @param scardhandle handle to the scmartcard
+   * @return SCARD_S_SUCCESS, SCARD_E_NO_SMARTCARD + errors of Smartcard
+   */
+  DWORD endTransactionOnSmartcard(SCARDHANDLE scardhandle, DWORD dwDisposition) {
+    if (smartCard == nullptr) {
+      return static_cast<DWORD>(SCARD_E_NO_SMARTCARD);
+    }
+    DWORD ret = smartCard->endTransaction(scardhandle, dwDisposition);
+    if (dwDisposition == SCARD_EJECT_CARD) {
+      smartCard.reset(nullptr);
+    }
+    return ret;
+  }
+
+  /**
+   * The function which must be overwritten by the implemented reader, which should be mainly a pinpad
+   * or non-pinpad reader. It will -most of the time- be a proxy function to the smartcard.
+   *
+   * @param scardhandle handle to the smartcard
+   * @param in_apdu APDU command
+   * @param in_apdu_lg length of the APDU command
+   * @param out_apdu APDU result
+   * @param out_apd_lg length of the APDU result
+   * @return SCARD_S_SUCCESS,
+   */
+  virtual DWORD execute(SCARDHANDLE scardhandle, const char *in_apdu, size_t in_apdu_lg, char **out_apdu, size_t *out_apd_lg) = 0;
+
+  /**
+   * Function to instantiate a supported reader ("Non Pinpad Reader", "Pinpad Reader")
+   *
+   * @param impl name of the supported reader
+   * @return smart pointer to the SmartCardReader object
+   */
   static shared_ptr<SmartCardReader> instance_of(const string &impl);
 
 protected:
@@ -137,16 +308,30 @@ private:
 };
 
 /**
- * Normal Smart card reader
+ * Non Pinpad Smartcard reader implementation
  */
 class NonPinpadReader : public SmartCardReader {
 public:
 
+  /**
+   * Constructor to instantiate the Non Pinpad Reader object
+   */
   NonPinpadReader() : SmartCardReader("Non Pinpad Reader") {
 
   };
 
-  DWORD execute(const char *in_apdu, size_t in_apdu_lg, char **out_apdu, size_t *out_apd_lg) override {
+  /**
+   * Specific implementation of the execute command for the Non Pinpad Reader. Commands to the smartcard will be proxied
+   * by this function to the smartcard.
+   *
+   * @param scardhandle handle to the smartcard
+   * @param in_apdu APDU command
+   * @param in_apdu_lg length of the APDU command
+   * @param out_apdu APDU result
+   * @param out_apd_lg length of the APDU result
+   * @return SCARD_S_SUCCESS
+   */
+  DWORD execute(SCARDHANDLE scardhandle, const char *in_apdu, size_t in_apdu_lg, char **out_apdu, size_t *out_apd_lg) override {
     return static_cast<DWORD>(SCARD_E_UNSUPPORTED_FEATURE);
   }
 
@@ -154,15 +339,29 @@ private:
 };
 
 /**
- * Pinpad Smart card reader
+ * Pinpad Smart card reader implementation
  */
 class PinpadReader : public  SmartCardReader {
 public:
+  /**
+   * Constructor to instantiate the Pinpad Reader object
+   */
   PinpadReader(): SmartCardReader("Pinpad Reader") {
 
   }
 
-  DWORD execute(const char *in_apdu, size_t in_apdu_lg, char **out_apdu, size_t *out_apd_lg) override {
+  /**
+   * Specific implementation of the execute command for the Pinpad Reader. Commands to the smartcard will be proxied
+   * by this function to the smartcard.
+   *
+   * @param scardhandle handle to the smartcard
+   * @param in_apdu APDU command
+   * @param in_apdu_lg length of the APDU command
+   * @param out_apdu APDU result
+   * @param out_apd_lg length of the APDU result
+   * @return SCARD_S_SUCCESS
+   */
+  DWORD execute(SCARDHANDLE scardhandle, const char *in_apdu, size_t in_apdu_lg, char **out_apdu, size_t *out_apd_lg) override {
     return static_cast<DWORD>(SCARD_E_UNSUPPORTED_FEATURE);
   }
 
@@ -180,11 +379,14 @@ shared_ptr<SmartCardReader> SmartCardReader::instance_of(const string &impl) {
   return nullptr;
 }
 
+/**
+ * Implementation of a test smartcard
+ */
 class TestSmartCard : public SmartCard {
 public:
   TestSmartCard() = default;
 
-  DWORD execute(const char *in_apdu, size_t in_apdu_lg, char **out_apdu, size_t *out_apd_lg) override {
+  DWORD execute(SCARDHANDLE handle, const char *in_apdu, size_t in_apdu_lg, char **out_apdu, size_t *out_apd_lg) override {
     return static_cast<DWORD>(SCARD_E_UNSUPPORTED_FEATURE);
   }
 
@@ -270,6 +472,30 @@ public:
     try {
       DWORD ret = smartcards_ctx.at(hCard)->reader->disconnectFromSmartCard(smartcards_ctx.at(hCard)->scardhandle, dwDisposition);
       smartcards_ctx.erase(hCard);
+      return ret;
+    }
+    catch (out_of_range &oor) {
+      return static_cast<DWORD>(SCARD_E_INVALID_HANDLE);
+    }
+  }
+
+  DWORD beginTransactionOnSmartcard(SCARDHANDLE hCard) {
+
+    try {
+      DWORD ret = smartcards_ctx.at(hCard)->reader->beginTransactionOnSmartcard(smartcards_ctx.at(hCard)->scardhandle);
+      return ret;
+    }
+    catch (out_of_range &oor) {
+      return static_cast<DWORD>(SCARD_E_INVALID_HANDLE);
+    }
+  }
+
+  DWORD endTransactionOnSmartcard(SCARDHANDLE hCard, DWORD dwDisposition) {
+
+    try {
+      DWORD ret = smartcards_ctx.at(hCard)
+        ->reader
+        ->endTransactionOnSmartcard(smartcards_ctx.at(hCard)->scardhandle,dwDisposition);
       return ret;
     }
     catch (out_of_range &oor) {
@@ -414,7 +640,7 @@ PCSC_API LONG SCardConnect(SCARDCONTEXT hContext, LPCSTR szReader, DWORD dwShare
 
 PCSC_API LONG SCardReconnect(SCARDHANDLE hCard, DWORD dwShareMode, DWORD dwPreferredProtocols, DWORD dwInitialization, LPDWORD pdwActiveProtocol)
 {
-
+  // TODO: Implementation necessary
   return get_return_code_for("winscard", __FUNCTION_NAME__ ,SCARD_S_SUCCESS);
 }
 
@@ -433,54 +659,61 @@ PCSC_API LONG SCardDisconnect(SCARDHANDLE hCard, DWORD dwDisposition)
 
 PCSC_API LONG SCardBeginTransaction(SCARDHANDLE hCard)
 {
+  DWORD default_return = 0;
+  try {
+    default_return = g_cardhandles.at(hCard)->winscard_ctx->beginTransactionOnSmartcard(g_cardhandles.at(hCard)->local_cardhandle);
+  }
+  catch (out_of_range &oor) {
+    return get_return_code_for("winscard", __FUNCTION_NAME__, SCARD_E_INVALID_HANDLE);
+  }
 
-  return get_return_code_for("winscard", __FUNCTION_NAME__ ,SCARD_S_SUCCESS);
+  return get_return_code_for("winscard", __FUNCTION_NAME__ , default_return);
 }
 
 PCSC_API LONG SCardEndTransaction(SCARDHANDLE hCard, DWORD dwDisposition)
 {
+  DWORD default_return = 0;
+  try {
+    default_return = g_cardhandles.at(hCard)->winscard_ctx->endTransactionOnSmartcard(g_cardhandles.at(hCard)->local_cardhandle, dwDisposition);
+  }
+  catch (out_of_range &oor) {
+    return get_return_code_for("winscard", __FUNCTION_NAME__, SCARD_E_INVALID_HANDLE);
+  }
 
-  return get_return_code_for("winscard", __FUNCTION_NAME__ ,SCARD_S_SUCCESS);
+  return get_return_code_for("winscard", __FUNCTION_NAME__ , default_return);
 }
 
 PCSC_API LONG SCardStatus(SCARDHANDLE hCard, LPSTR mszReaderName, LPDWORD pcchReaderLen, LPDWORD pdwState, LPDWORD pdwProtocol, LPBYTE pbAtr, LPDWORD pcbAtrLen)
 {
+  // TODO: Implementation necessary
 
   return get_return_code_for("winscard", __FUNCTION_NAME__ ,SCARD_S_SUCCESS);
 }
 
 PCSC_API LONG SCardGetStatusChange(SCARDCONTEXT hContext, DWORD dwTimeout, SCARD_READERSTATE *rgReaderStates, DWORD cReaders)
 {
-  try {
-    g_contexts.at(hContext);
-  }
-  catch (out_of_range &oor) {
-    return get_return_code_for("winscard", __FUNCTION_NAME__, SCARD_E_INVALID_HANDLE);
-  }
+  // TODO: Implementation necessary
 
   return get_return_code_for("winscard", __FUNCTION_NAME__ ,SCARD_S_SUCCESS);
 }
 
 PCSC_API LONG SCardControl(SCARDHANDLE hCard, DWORD dwControlCode, LPCVOID pbSendBuffer, DWORD cbSendLength, LPVOID pbRecvBuffer, DWORD cbRecvLength, LPDWORD lpBytesReturned)
 {
+  // TODO: Implementation necessary
 
   return get_return_code_for("winscard", __FUNCTION_NAME__ ,SCARD_S_SUCCESS);
 }
 
 PCSC_API LONG SCardTransmit(SCARDHANDLE hCard, const SCARD_IO_REQUEST *pioSendPci, LPCBYTE pbSendBuffer, DWORD cbSendLength, SCARD_IO_REQUEST *pioRecvPci, LPBYTE pbRecvBuffer, LPDWORD pcbRecvLength)
 {
+  // TODO: Implementation necessary
 
   return get_return_code_for("winscard", __FUNCTION_NAME__ ,SCARD_S_SUCCESS);
 }
 
 PCSC_API LONG SCardListReaderGroups(SCARDCONTEXT hContext, LPSTR mszGroups, LPDWORD pcchGroups)
 {
-  try {
-    g_contexts.at(hContext);
-  }
-  catch (out_of_range &oor) {
-    return get_return_code_for("winscard", __FUNCTION_NAME__, SCARD_E_INVALID_HANDLE);
-  }
+  // TODO: Implementation necessary
 
   return get_return_code_for("winscard", __FUNCTION_NAME__ ,SCARD_S_SUCCESS);
 }
@@ -532,20 +765,28 @@ PCSC_API LONG SCardListReaders(SCARDCONTEXT hContext, LPCSTR mszGroups, LPSTR ms
 
 PCSC_API LONG SCardFreeMemory(SCARDCONTEXT hContext, LPCVOID pvMem)
 {
+  // TODO: Implementation necessary
+
   return get_return_code_for("winscard", __FUNCTION_NAME__ ,SCARD_S_SUCCESS);
 }
 
 PCSC_API LONG SCardCancel(SCARDCONTEXT hContext)
 {
+  // TODO: Implementation necessary
+
   return get_return_code_for("winscard", __FUNCTION_NAME__ ,SCARD_S_SUCCESS);
 }
 
 PCSC_API LONG SCardGetAttrib(SCARDHANDLE hCard, DWORD dwAttrId, LPBYTE pbAttr, LPDWORD pcbAttrLen)
 {
+  // TODO: Implementation necessary
+
   return get_return_code_for("winscard", __FUNCTION_NAME__ ,SCARD_S_SUCCESS);
 }
 
 PCSC_API LONG SCardSetAttrib(SCARDHANDLE hCard, DWORD dwAttrId, LPCBYTE pbAttr, DWORD cbAttrLen)
 {
+  // TODO: Implementation necessary
+
   return get_return_code_for("winscard", __FUNCTION_NAME__ ,SCARD_S_SUCCESS);
 }
