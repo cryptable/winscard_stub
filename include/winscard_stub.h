@@ -20,6 +20,8 @@ PCSC_API LONG SCardAttachReader(SCARDCONTEXT hContext, LPCSTR szReader);
 
 PCSC_API LONG SCardInsertSmartCardInReader(SCARDCONTEXT hContext, LPCSTR szReader, LPCSTR szCard);
 
+PCSC_API LONG SCardRemoveSmartCardFromReader(SCARDCONTEXT hContext, LPCSTR szReader);
+
 #ifdef __cplusplus
 };
 #endif

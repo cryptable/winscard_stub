@@ -137,6 +137,9 @@ public:
    */
   virtual DWORD execute(SCARDHANDLE handle, const char *in_apdu, size_t in_apdu_lg, char **out_apdu, size_t *out_apd_lg) = 0;
 
+  DWORD getPreferredProtocol() {
+    return allowedProtocol;
+  }
   /**
    * Function to override which returns the ATR pointer
    */
@@ -308,28 +311,32 @@ public:
 
     *pdwState = getState();
 
-    if ((*pcchReaderLen < name.size())
-        || (*pcbAtrLen < smartCard->getATR().size())) {
-      *pcbAtrLen = smartCard->getATR().size();
-      *pcchReaderLen = name.size();
-      return SCARD_E_INSUFFICIENT_BUFFER;
-    }
-    if (mszReaderName != nullptr) {
-      strncpy(mszReaderName, name.c_str(), name.size());
-    }
-    *pcchReaderLen = name.size();
-
     if (smartCard == nullptr){
       return SCARD_W_REMOVED_CARD;
     }
+    *pdwProtocol = smartCard->getPreferredProtocol();
 
+    if (*pcchReaderLen < (name.size() + 1)) {
+      *pcbAtrLen = smartCard->getATR().size();
+      *pcchReaderLen = name.size() + 1;
+      return SCARD_E_INSUFFICIENT_BUFFER;
+    }
+    *pcchReaderLen = name.size() + 1;
+    if (mszReaderName != nullptr) {
+      strncpy(mszReaderName, name.c_str(), name.size());
+      mszReaderName[name.size()] = '\0';
+    }
+    if (*pcbAtrLen < smartCard->getATR().size()) {
+      *pcbAtrLen = smartCard->getATR().size();
+      return SCARD_E_INSUFFICIENT_BUFFER;
+    }
+    *pcbAtrLen = smartCard->getATR().size();
     if (pbAtr != nullptr) {
       int index = 0;
       for (auto c : smartCard->getATR()) {
         pbAtr[index++] = c;
       }
     }
-    *pcbAtrLen = smartCard->getATR().size();
 
     return SCARD_S_SUCCESS;
   }
@@ -519,7 +526,21 @@ public:
   }
 
   DWORD insertSmartCardIn(const string &reader, const string &card) {
-    return readers[reader]->insertCard(card);
+    try {
+      return readers.at(reader)->insertCard(card);
+    }
+    catch (out_of_range &oor) {
+      return SCARD_E_READER_UNAVAILABLE;
+    }
+  }
+
+  DWORD removeSmartCardFrom(const string &reader) {
+    try {
+      return readers.at(reader)->ejectCard();
+    }
+    catch (out_of_range &oor) {
+      return SCARD_E_READER_UNAVAILABLE;
+    }
   }
 
   DWORD connectToSmartCard(const char *readerName, DWORD dwShareMode, DWORD dwPreferredProtocols, LPSCARDHANDLE phCard, LPDWORD pdwActiveProtocol) {
@@ -657,6 +678,16 @@ PCSC_API LONG SCardInsertSmartCardInReader(SCARDCONTEXT hContext, LPCSTR szReade
     return SCARD_E_INVALID_HANDLE;
   }
 }
+
+PCSC_API LONG SCardRemoveSmartCardFromReader(SCARDCONTEXT hContext, LPCSTR szReader) {
+  try {
+    return g_contexts.at(hContext)->removeSmartCardFrom(szReader);
+  }
+  catch (out_of_range &oor) {
+    return SCARD_E_INVALID_HANDLE;
+  }
+}
+
 
 PCSC_API LONG SCardEstablishContext(DWORD dwScope, LPCVOID pvReserved1, LPCVOID pvReserved2, LPSCARDCONTEXT phContext)
 {

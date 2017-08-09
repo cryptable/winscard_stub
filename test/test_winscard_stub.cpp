@@ -358,7 +358,7 @@ TEST_CASE( "SCardConnect() testing for default behaviour", "[API]") {
 
     ret = SCardInsertSmartCardInReader(hContext, "Pinpad Reader 0", "test");
 
-    ret = SCardConnect(hContext, "Pinpad Reader 0", SCARD_SHARE_EXCLUSIVE, SCARD_PROTOCOL_T1, &dwCardHandle, &dwActiveProtocol);
+    ret = SCardConnect(hContext, "Pinpad Reader 0", SCARD_SHARE_SHARED, SCARD_PROTOCOL_T1, &dwCardHandle, &dwActiveProtocol);
 
     REQUIRE(ret == SCARD_E_INVALID_VALUE);
   }
@@ -478,6 +478,13 @@ TEST_CASE( "SCardInsertSmartCardInReader() testing for default behaviour", "[API
     REQUIRE( ret == SCARD_E_CARD_UNSUPPORTED );
   }
 
+  SECTION("Fail with unknown reader") {
+    ret = SCardAttachReader(hContext, "Non Pinpad Reader");
+
+    ret = SCardInsertSmartCardInReader(hContext, "Non Pinpad Reader 1", "test");
+    REQUIRE( ret == SCARD_E_READER_UNAVAILABLE );
+  }
+
   SECTION("Fail with invalid handle") {
     ret = SCardAttachReader(hContext, "Non Pinpad Reader");
 
@@ -493,6 +500,52 @@ TEST_CASE( "SCardInsertSmartCardInReader() testing for default behaviour", "[API
     ret = SCardInsertSmartCardInReader(hContext, "Non Pinpad Reader 0", "test");
     REQUIRE( ret == SCARD_E_CARD_IN_READER );
   }
+  ret = SCardReleaseContext(hContext);
+}
+
+TEST_CASE( "SCardRemoveSmartCardFromReader() testing for default behaviour", "[API]") {
+  SCARDCONTEXT hContext = 0;
+  LONG         ret = 0;
+
+  ret = SCardEstablishContext(SCARD_SCOPE_SYSTEM, NULL, NULL, &hContext);
+
+  SECTION("Success") {
+    ret = SCardAttachReader(hContext, "Non Pinpad Reader");
+    ret = SCardInsertSmartCardInReader(hContext, "Non Pinpad Reader 0", "test");
+
+    ret = SCardRemoveSmartCardFromReader(hContext, "Non Pinpad Reader 0");
+    REQUIRE( ret == SCARD_S_SUCCESS );
+  }
+
+  SECTION("Fail with unknown reader") {
+    ret = SCardAttachReader(hContext, "Non Pinpad Reader");
+
+    ret = SCardInsertSmartCardInReader(hContext, "Non Pinpad Reader 0", "test");
+
+    ret = SCardRemoveSmartCardFromReader(hContext, "Non Pinpad Reader 1");
+    REQUIRE( ret == SCARD_E_READER_UNAVAILABLE );
+  }
+
+  SECTION("Fail with unknown handle") {
+    ret = SCardAttachReader(hContext, "Non Pinpad Reader");
+
+    ret = SCardInsertSmartCardInReader(hContext, "Non Pinpad Reader 0", "test");
+
+    ret = SCardRemoveSmartCardFromReader(hContext + 1, "Non Pinpad Reader 0");
+    REQUIRE( ret == SCARD_E_INVALID_HANDLE );
+  }
+
+  SECTION("Fail card already removed") {
+    ret = SCardAttachReader(hContext, "Non Pinpad Reader");
+
+    ret = SCardInsertSmartCardInReader(hContext, "Non Pinpad Reader 0", "test");
+
+    ret = SCardRemoveSmartCardFromReader(hContext, "Non Pinpad Reader 0");
+
+    ret = SCardRemoveSmartCardFromReader(hContext, "Non Pinpad Reader 0");
+    REQUIRE( ret == SCARD_E_NO_SMARTCARD );
+  }
+
   ret = SCardReleaseContext(hContext);
 }
 
@@ -605,6 +658,13 @@ TEST_CASE( "SCardBeginTransaction() testing for default behaviour", "[API]") {
     REQUIRE(ret == SCARD_E_INVALID_HANDLE);
   }
 
+  SECTION("Fail 2 calls to SCardBeginTransaction") {
+    ret = SCardBeginTransaction(dwCardHandle);
+
+    ret = SCardBeginTransaction(dwCardHandle);
+    REQUIRE(ret == SCARD_E_SHARING_VIOLATION);
+  }
+
   SECTION("Fail with sharing violation, transaction already begun") {
     SCARDHANDLE dwCardHandle2 = 0;
 
@@ -652,6 +712,216 @@ TEST_CASE( "SCardEndTransaction() testing for default behaviour", "[API]") {
     ret = SCardEndTransaction(dwCardHandle, SCARD_LEAVE_CARD);
   }
 
+  SECTION("Fail with missing SCardBeginTransaction") {
+
+    ret = SCardEndTransaction(dwCardHandle, SCARD_LEAVE_CARD);
+
+    REQUIRE(ret == SCARD_E_NOT_TRANSACTED);
+  }
+
+  SECTION("Fail with 2 times calling SCardEndTransaction") {
+    ret = SCardBeginTransaction(dwCardHandle);
+    ret = SCardEndTransaction(dwCardHandle, SCARD_LEAVE_CARD);
+
+    ret = SCardEndTransaction(dwCardHandle, SCARD_LEAVE_CARD);
+    REQUIRE(ret == SCARD_E_NOT_TRANSACTED);
+  }
+
+  SECTION("Fail with SCARD_W_RESET_CARD") {
+    ret = SCardBeginTransaction(dwCardHandle);
+
+    ret = SCardEndTransaction(dwCardHandle, SCARD_RESET_CARD);
+    REQUIRE(ret == SCARD_W_RESET_CARD);
+  }
+
+  SECTION("Fail with SCARD_W_RESET_CARD") {
+    ret = SCardBeginTransaction(dwCardHandle);
+    ret = SCardRemoveSmartCardFromReader(hContext, "Non Pinpad Reader 0");
+
+    ret = SCardEndTransaction(dwCardHandle, SCARD_RESET_CARD);
+    REQUIRE(ret == SCARD_E_NO_SMARTCARD);
+  }
+
   ret = SCardDisconnect(dwCardHandle, dwDisposition);
   ret = SCardReleaseContext(hContext);
+}
+
+TEST_CASE( "SCardStatus() testing for default behaviour", "[API]") {
+  SCARDCONTEXT hContext { 0 };
+  LONG         ret { 0 };
+
+  ret = SCardEstablishContext(SCARD_SCOPE_SYSTEM, NULL, NULL, &hContext);
+  ret = SCardAttachReader(hContext, "Non Pinpad Reader");
+
+  SECTION("Success") {
+    SCARDHANDLE hCard { 0 };
+    DWORD       dwActiveProtocol { 0 };
+    char        *reader = nullptr;
+    DWORD       readerLg = sizeof(reader);
+    DWORD       state { 0 };
+    DWORD       protocol { 0 };
+    BYTE        *atr = nullptr;
+    BYTE        atr_ref[] = { 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16 };
+    DWORD       atrLg { 0 };
+
+    ret = SCardInsertSmartCardInReader(hContext, "Non Pinpad Reader 0", "test");
+    ret = SCardConnect(hContext, "Non Pinpad Reader 0", SCARD_SHARE_SHARED, SCARD_PROTOCOL_T0, &hCard, &dwActiveProtocol);
+
+    ret = SCardStatus(hCard, NULL, &readerLg, &state, &protocol, NULL, &atrLg);
+    REQUIRE( ret == SCARD_E_INSUFFICIENT_BUFFER);
+    REQUIRE( protocol == SCARD_PROTOCOL_T0 );
+    REQUIRE( (0x00FF & state) == SCARD_SPECIFIC );
+    REQUIRE( readerLg == 18);
+    REQUIRE( atrLg == 16);
+
+    reader = new char[readerLg];
+    atr = new BYTE[atrLg];
+
+    ret = SCardStatus(hCard, reader, &readerLg, &state, &protocol, atr, &atrLg);
+    REQUIRE( ret == SCARD_S_SUCCESS);
+    REQUIRE( protocol == SCARD_PROTOCOL_T0 );
+    REQUIRE( (0x00FF & state) == SCARD_SPECIFIC );
+    REQUIRE( strcmp(reader, "Non Pinpad Reader") == 0 );
+    REQUIRE( atrLg == 16);
+    REQUIRE( memcmp(atr, atr_ref, atrLg) == 0);
+
+    delete reader;
+    delete atr;
+    ret = SCardDisconnect(hCard, SCARD_EJECT_CARD);
+  }
+
+  SECTION("Success with pre-allocated reader") {
+    SCARDHANDLE hCard { 0 };
+    DWORD       dwActiveProtocol { 0 };
+    char        reader[33] { 0x00 };
+    DWORD       readerLg = sizeof(reader);
+    DWORD       state { 0 };
+    DWORD       protocol { 0 };
+    BYTE        *atr;
+    BYTE        atr_ref[] = { 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16 };
+    DWORD       atrLg { 0 };
+
+    ret = SCardInsertSmartCardInReader(hContext, "Non Pinpad Reader 0", "test");
+    ret = SCardConnect(hContext, "Non Pinpad Reader 0", SCARD_SHARE_SHARED, SCARD_PROTOCOL_T0, &hCard, &dwActiveProtocol);
+
+    ret = SCardStatus(hCard, reader, &readerLg, &state, &protocol, NULL, &atrLg);
+    REQUIRE( ret == SCARD_E_INSUFFICIENT_BUFFER);
+    REQUIRE( protocol == SCARD_PROTOCOL_T0 );
+    REQUIRE( (0x00FF & state) == SCARD_SPECIFIC );
+    REQUIRE( strcmp(reader, "Non Pinpad Reader") == 0 );
+    REQUIRE( atrLg == 16);
+
+    atr = new BYTE[atrLg];
+    ret = SCardStatus(hCard, reader, &readerLg, &state, &protocol, atr, &atrLg);
+    REQUIRE( ret == SCARD_S_SUCCESS);
+    REQUIRE( protocol == SCARD_PROTOCOL_T0 );
+    REQUIRE( (0x00FF & state) == SCARD_SPECIFIC );
+    REQUIRE( strcmp(reader, "Non Pinpad Reader") == 0 );
+    REQUIRE( atrLg == 16);
+    REQUIRE( memcmp(atr, atr_ref, atrLg) == 0);
+
+    delete atr;
+    ret = SCardDisconnect(hCard, SCARD_EJECT_CARD);
+  }
+
+  SECTION("Success with pre-allocated atr buffer") {
+    SCARDHANDLE hCard { 0 };
+    DWORD       dwActiveProtocol { 0 };
+    char        *reader = nullptr;
+    DWORD       readerLg = 0;
+    DWORD       state { 0 };
+    DWORD       protocol { 0 };
+    BYTE        atr[MAX_ATR_SIZE] { 0x00 };
+    BYTE        atr_ref[] = { 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16 };
+    DWORD       atrLg { MAX_ATR_SIZE };
+
+    ret = SCardInsertSmartCardInReader(hContext, "Non Pinpad Reader 0", "test");
+    ret = SCardConnect(hContext, "Non Pinpad Reader 0", SCARD_SHARE_SHARED, SCARD_PROTOCOL_T0, &hCard, &dwActiveProtocol);
+
+    ret = SCardStatus(hCard, NULL, &readerLg, &state, &protocol, atr, &atrLg);
+    REQUIRE( ret == SCARD_E_INSUFFICIENT_BUFFER);
+    REQUIRE( protocol == SCARD_PROTOCOL_T0 );
+    REQUIRE( (0x00FF & state) == SCARD_SPECIFIC );
+    REQUIRE( readerLg == 18);
+    REQUIRE( atrLg == 16);
+
+    reader = new char[readerLg];
+
+    ret = SCardStatus(hCard, reader, &readerLg, &state, &protocol, atr, &atrLg);
+    REQUIRE( ret == SCARD_S_SUCCESS);
+    REQUIRE( protocol == SCARD_PROTOCOL_T0 );
+    REQUIRE( (0x00FF & state) == SCARD_SPECIFIC );
+    REQUIRE( strcmp(reader, "Non Pinpad Reader") == 0 );
+    REQUIRE( memcmp(atr, atr_ref, atrLg) == 0);
+
+    delete reader;
+    ret = SCardDisconnect(hCard, SCARD_EJECT_CARD);
+  }
+
+  SECTION("Success with card remove/inserted") {
+    SCARDHANDLE hCard { 0 };
+    DWORD       dwActiveProtocol { 0 };
+    char        reader[20] { 0x00 };
+    DWORD       readerLg = sizeof(reader);
+    DWORD       state { 0 };
+    DWORD       protocol { 0 };
+    BYTE        atr[MAX_ATR_SIZE] = { 0x00 };
+    DWORD       atrLg { MAX_ATR_SIZE };
+    DWORD       eventCntr1 = 0;
+    DWORD       eventCntr2 = 0;
+
+    ret = SCardInsertSmartCardInReader(hContext, "Non Pinpad Reader 0", "test");
+    ret = SCardConnect(hContext, "Non Pinpad Reader 0", SCARD_SHARE_SHARED, SCARD_PROTOCOL_T0, &hCard, &dwActiveProtocol);
+
+    ret = SCardStatus(hCard, reader, &readerLg, &state, &protocol, atr, &atrLg);
+    eventCntr1 = 0x0000FFFF & (state >> 16);
+    REQUIRE( ret == SCARD_S_SUCCESS);
+    REQUIRE( eventCntr1 > 0 );
+    ret = SCardRemoveSmartCardFromReader(hContext, "Non Pinpad Reader 0");
+    ret = SCardInsertSmartCardInReader(hContext, "Non Pinpad Reader 0", "test");
+
+    ret = SCardStatus(hCard, reader, &readerLg, &state, &protocol, atr, &atrLg);
+    eventCntr2= 0x0000FFFF & (state >> 16);
+    REQUIRE( ret == SCARD_S_SUCCESS);
+    REQUIRE( eventCntr2 > eventCntr1 );
+
+    ret = SCardDisconnect(hCard, SCARD_EJECT_CARD);
+  }
+
+  SECTION("Fail with card absent") {
+    SCARDHANDLE hCard { 0 };
+    DWORD       dwActiveProtocol { 0 };
+    DWORD       readerLg = 0;
+    DWORD       state { 0 };
+    DWORD       protocol { 0 };
+    DWORD       atrLg { MAX_ATR_SIZE };
+
+    ret = SCardInsertSmartCardInReader(hContext, "Non Pinpad Reader 0", "test");
+    ret = SCardConnect(hContext, "Non Pinpad Reader 0", SCARD_SHARE_SHARED, SCARD_PROTOCOL_T0, &hCard, &dwActiveProtocol);
+    ret = SCardRemoveSmartCardFromReader(hContext, "Non Pinpad Reader 0");
+
+    ret = SCardStatus(hCard, NULL, &readerLg, &state, &protocol, NULL, &atrLg);
+    REQUIRE( ret == SCARD_W_REMOVED_CARD);
+    REQUIRE( (0x00FF & state) == SCARD_ABSENT );
+
+    ret = SCardDisconnect(hCard, SCARD_EJECT_CARD);
+  }
+
+  SECTION("Fail with invalid handle") {
+    SCARDHANDLE hCard { 0 };
+    DWORD       dwActiveProtocol { 0 };
+    DWORD       readerLg = 0;
+    DWORD       state { 0 };
+    DWORD       protocol { 0 };
+    DWORD       atrLg { MAX_ATR_SIZE };
+
+    ret = SCardInsertSmartCardInReader(hContext, "Non Pinpad Reader 0", "test");
+    ret = SCardConnect(hContext, "Non Pinpad Reader 0", SCARD_SHARE_SHARED, SCARD_PROTOCOL_T0, &hCard, &dwActiveProtocol);
+
+    ret = SCardStatus(hCard + 1, NULL, &readerLg, &state, &protocol, NULL, &atrLg);
+    REQUIRE( ret == SCARD_E_INVALID_HANDLE);
+
+    ret = SCardDisconnect(hCard, SCARD_EJECT_CARD);
+  }
+
 }
