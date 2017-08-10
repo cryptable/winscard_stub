@@ -3,6 +3,7 @@
 //
 #define CATCH_CONFIG_MAIN
 #include <winscard.h>
+#include <thread>
 #include "catch.hpp"
 #include "stubbing.h"
 #include "winscard_stub.h"
@@ -924,4 +925,34 @@ TEST_CASE( "SCardStatus() testing for default behaviour", "[API]") {
     ret = SCardDisconnect(hCard, SCARD_EJECT_CARD);
   }
 
+  ret = SCardReleaseContext(hContext);
+}
+
+TEST_CASE( "SCardGetStatusChange() testing for default behaviour", "[API]") {
+  SCARDCONTEXT hContext{0};
+  LONG ret{0};
+
+  ret = SCardEstablishContext(SCARD_SCOPE_SYSTEM, NULL, NULL, &hContext);
+
+  SECTION("Succes attach reader", "[API]") {
+    SCARD_READERSTATE readerStates[1] {};
+    DWORD             readerStatesLg {sizeof(readerStates)};
+
+    std::thread th1([hContext]{
+      DWORD ret = 0;
+      std::this_thread::sleep_for(std::chrono::seconds(1));
+      ret = SCardAttachReader(hContext, "Non Pinpad Reader");
+      REQUIRE(ret == SCARD_S_SUCCESS);
+    });
+
+    readerStates[0].szReader = "\\\\?PnP?\\Notification";
+    ret = SCardGetStatusChange(hContext, 10, readerStates, readerStatesLg);
+    REQUIRE( ret == SCARD_S_SUCCESS );
+    REQUIRE( readerStates[0].dwEventState == SCARD_STATE_CHANGED );
+    REQUIRE( strcmp(readerStates[0].szReader,"Non Pinpad Reader 0") == 0 );
+
+    th1.join();
+  }
+
+  ret = SCardReleaseContext(hContext);
 }

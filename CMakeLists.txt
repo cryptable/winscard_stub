@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.5)
 project(winscard_stub)
 
+find_package( Threads )
+
 set (CMAKE_CXX_STANDARD 11)
 set (CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS} -Wall -Wextra")
 
@@ -16,7 +18,8 @@ set(TEST_SOURCE_FILES test/test_winscard_stub.cpp test/test_stubbing.cpp)
 enable_testing()
 set(PROJECT_TEST_NAME winscard_test)
 add_executable(${PROJECT_TEST_NAME} ${TEST_SOURCE_FILES})
-target_link_libraries(${PROJECT_TEST_NAME} winscard_stub)
+set_property(TARGET ${PROJECT_TEST_NAME} PROPERTY CXX_STANDARD 11)
+target_link_libraries(${PROJECT_TEST_NAME} winscard_stub ${CMAKE_THREAD_LIBS_INIT})
 
 
 if(CMAKE_COMPILER_IS_GNUCXX)
@@ -31,6 +34,7 @@ if(CMAKE_COMPILER_IS_GNUCXX)
     setup_target_for_coverage(NAME ${PROJECT_TEST_NAME}_coverage
             EXECUTABLE ${PROJECT_TEST_NAME}
             DEPENDENCIES ${PROJECT_TEST_NAME})
+    set_property(TARGET ${PROJECT_TEST_NAME}_coverage PROPERTY CXX_STANDARD 11)
 endif()
 
 add_test(test ${PROJECT_TEST_NAME})
