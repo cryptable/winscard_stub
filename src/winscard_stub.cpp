@@ -501,8 +501,8 @@ public:
   ReaderEvent(shared_ptr<SmartCardReader> &reader) : new_reader(reader) {};
 
   DWORD getReaderState(SCARD_READERSTATE readerState[], DWORD cReaders) override {
-    for (int i=0; i<cReaders; i++) {
-      if (strncmp(readerState[i].szReader, "\\\\?PnP?\\Notification", 20) == 0) {
+    for (unsigned int i=0; i<cReaders; i++) {
+      if (string(readerState[i].szReader) ==  "\\\\?PnP?\\Notification") {
         readerState[i].szReader = new_reader->getReaderIdentifier().c_str();
         readerState[i].dwEventState = SCARD_STATE_CHANGED;
         return SCARD_S_SUCCESS;
@@ -610,9 +610,16 @@ public:
     new_reader_impl->setId(next);
     readers[new_reader_impl->getReaderIdentifier()] = new_reader_impl;
 
-    lock_guard<mutex> lock_events(events_mutex);
-    if (events){
-      events->set_value(make_unique<ReaderEvent>(new_reader_impl));
+    {
+      lock_guard<mutex> lock_events(events_mutex);
+      if (events){
+        // TODO: Don't like the solution (evaluate a condition variable to simplify?)
+        for (unsigned int i=0; i<numberOfToScanReaders; i++) {
+          if (string(toScanReaders[i].szReader) == "\\\\?PnP?\\Notification") {
+            events->set_value(make_unique<ReaderEvent>(new_reader_impl));
+          }
+        }
+      }
     }
 
     refreshReaderNames();
@@ -626,7 +633,12 @@ public:
 
       lock_guard<mutex> lock_events(events_mutex);
       if (events){
-        events->set_value(make_unique<SmartCardEvent>(readers.at(reader)));
+        for (unsigned int i=0; i<numberOfToScanReaders; i++) {
+          // TODO: Don't like the solution (evaluate a condition variable to simplify?)
+          if (toScanReaders[i].szReader == reader) {
+            events->set_value(make_unique<SmartCardEvent>(readers.at(reader)));
+          }
+        }
       }
 
       return ret;
@@ -642,7 +654,12 @@ public:
 
       lock_guard<mutex> lock_events(events_mutex);
       if (events) {
-        events->set_value(make_unique<SmartCardEvent>(readers.at(reader)));
+        // TODO: Don't like the solution (evaluate a condition variable to simplify?)
+        for (unsigned int i=0; i<numberOfToScanReaders; i++) {
+          if (toScanReaders[i].szReader == reader) {
+            events->set_value(make_unique<SmartCardEvent>(readers.at(reader)));
+          }
+        }
       }
       return ret;
     }
@@ -713,24 +730,24 @@ public:
     }
   }
 
+  // TODO: No support for multithreaded SCardGetStatusChange! Need a vector of promises or condition variables
   DWORD contextGetStatusChange(DWORD dwTimeout, SCARD_READERSTATE *rgReaderStates, DWORD cReaders) {
-    try {
-      {
-        lock_guard<mutex> lock_events(events_mutex);
-        events = make_unique<promise<unique_ptr<WinsCardEvent>>>();
-      }
-      future<unique_ptr<WinsCardEvent>> event = events->get_future();
-      future_status status = event.wait_for(chrono::seconds(dwTimeout));
-      if (status == future_status::timeout) {
-        return SCARD_E_TIMEOUT;
-      }
-      if (status == future_status::ready) {
-        return event.get()->getReaderState(rgReaderStates, cReaders);
-      }
+    {
+      lock_guard<mutex> lock_events(events_mutex);
+      events = make_unique<promise<unique_ptr<WinsCardEvent>>>();
+      toScanReaders = rgReaderStates;
+      numberOfToScanReaders = cReaders;
     }
-    catch (out_of_range &oor) {
-      return static_cast<DWORD>(SCARD_E_INVALID_HANDLE);
+    future<unique_ptr<WinsCardEvent>> event = events->get_future();
+    future_status status = event.wait_for(chrono::seconds(dwTimeout));
+    if (status == future_status::timeout) {
+      return SCARD_E_TIMEOUT;
     }
+    if (status == future_status::ready) {
+      return event.get()->getReaderState(rgReaderStates, cReaders);
+    }
+
+    return SCARD_E_UNEXPECTED;
   }
 
 private:
@@ -740,6 +757,7 @@ private:
     shared_ptr<SmartCardReader> reader;
     SCARDHANDLE scardhandle;
   };
+
   unordered_map<SCARDHANDLE, unique_ptr<struct scard_ctx>> smartcards_ctx;
   SCARDHANDLE cardctx = 0;
 
@@ -770,6 +788,8 @@ private:
 
   mutex events_mutex;
   unique_ptr<promise<unique_ptr<WinsCardEvent>>> events;
+  SCARD_READERSTATE *toScanReaders;
+  DWORD             numberOfToScanReaders;
 };
 
 /**

@@ -4,6 +4,7 @@
 #define CATCH_CONFIG_MAIN
 #include <winscard.h>
 #include <thread>
+#include <pcsclite.h>
 #include "catch.hpp"
 #include "stubbing.h"
 #include "winscard_stub.h"
@@ -936,7 +937,7 @@ TEST_CASE( "SCardGetStatusChange() testing for default behaviour", "[API]") {
 
   SECTION("Succes attach reader", "[API]") {
     SCARD_READERSTATE readerStates[1] {};
-    DWORD             readerStatesLg {sizeof(readerStates)};
+    DWORD             readerStatesLg {1};
 
     std::thread th1([hContext]{
       DWORD ret = 0;
@@ -947,11 +948,68 @@ TEST_CASE( "SCardGetStatusChange() testing for default behaviour", "[API]") {
 
     readerStates[0].szReader = "\\\\?PnP?\\Notification";
     ret = SCardGetStatusChange(hContext, 10, readerStates, readerStatesLg);
+    th1.join();
+
     REQUIRE( ret == SCARD_S_SUCCESS );
     REQUIRE( readerStates[0].dwEventState == SCARD_STATE_CHANGED );
     REQUIRE( strcmp(readerStates[0].szReader,"Non Pinpad Reader 0") == 0 );
 
+  }
+
+  SECTION("Succes insert smartcard", "[API]") {
+    SCARD_READERSTATE readerStates[1] {};
+    DWORD             readerStatesLg {1};
+
+    ret = SCardAttachReader(hContext, "Non Pinpad Reader");
+
+    std::thread th1([hContext]{
+      DWORD ret = 0;
+      std::this_thread::sleep_for(std::chrono::seconds(1));
+      ret = SCardInsertSmartCardInReader(hContext, "Non Pinpad Reader 0", "test");
+      REQUIRE(ret == SCARD_S_SUCCESS);
+    });
+
+    readerStates[0].szReader = "Non Pinpad Reader 0";
+    readerStates[0].dwCurrentState = SCARD_STATE_UNAWARE;
+    ret = SCardGetStatusChange(hContext, 10, readerStates, readerStatesLg);
     th1.join();
+
+    REQUIRE( ret == SCARD_S_SUCCESS );
+    REQUIRE( readerStates[0].dwEventState == SCARD_STATE_PRESENT );
+    REQUIRE( strcmp(readerStates[0].szReader,"Non Pinpad Reader 0") == 0 );
+
+  }
+
+  SECTION("Failed timeout no event", "[API]") {
+    SCARD_READERSTATE readerStates[1] {};
+    DWORD             readerStatesLg {1};
+
+    ret = SCardAttachReader(hContext, "Non Pinpad Reader");
+
+    readerStates[0].szReader = "Non Pinpad Reader 0";
+    readerStates[0].dwCurrentState = SCARD_STATE_UNAWARE;
+    ret = SCardGetStatusChange(hContext, 1, readerStates, readerStatesLg);
+    REQUIRE( ret == SCARD_E_TIMEOUT );
+  }
+
+  SECTION("Failed timeout other events", "[API]") {
+    SCARD_READERSTATE readerStates[1] {};
+    DWORD             readerStatesLg {1};
+
+    std::thread th1([hContext]{
+      DWORD ret = 0;
+      std::this_thread::sleep_for(std::chrono::seconds(1));
+      ret = SCardAttachReader(hContext, "Non Pinpad Reader");
+      CHECK(ret == SCARD_S_SUCCESS);
+    });
+
+    readerStates[0].szReader = "Non Pinpad Reader 0";
+    readerStates[0].dwCurrentState = SCARD_STATE_UNAWARE;
+    ret = SCardGetStatusChange(hContext, 10, readerStates, readerStatesLg);
+    th1.join();
+
+    REQUIRE( ret == SCARD_E_TIMEOUT );
+
   }
 
   ret = SCardReleaseContext(hContext);
