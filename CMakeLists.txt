@@ -8,7 +8,7 @@ set (CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS} -Wall -Wextra")
 
 include_directories(${PROJECT_SOURCE_DIR}/include /usr/include/PCSC)
 
-set(SOURCE_FILES src/winscard_stub.cpp include/winscard_stub.h src/stubbing.cpp include/stubbing.h include/missing_stl.h)
+set(SOURCE_FILES src/winscard_stub.cpp include/winscard_stub.h src/stubbing.cpp include/stubbing.h include/missing_stl.h src/eventhandler/WinscardEventSubject.cpp src/eventhandler/WinscardEventSubject.h src/eventhandler/WinscardEventObserver.cpp src/eventhandler/WinscardEventObserver.h)
 
 add_library(winscard_stub ${SOURCE_FILES})
 

@@ -177,6 +177,9 @@ private:
   vector<unsigned char> ATR;
 };
 
+class ReaderEventSubject;
+class SmartcardEventSubject;
+
 /**
  * Smartcard reader simulator: This class will be the base class for the reader implementation. In a reader only 1 card
  * can be inserted. All calls from the winscard interface will  be proxied through the reader implementation.
@@ -202,7 +205,9 @@ public:
    *
    * @param readerName
    */
-  explicit SmartCardReader(string readerName): name(std::move(readerName)), smartCard(nullptr), events(0), id(0) {
+  explicit SmartCardReader(string readerName): name(std::move(readerName)), smartCard(nullptr), events(0), id(0),
+                                               readerEvents(this),
+                                               smartcardEvents(this) {
 
   };
 
@@ -266,6 +271,8 @@ public:
       return static_cast<DWORD>(SCARD_E_CARD_UNSUPPORTED);
     }
     events++;
+    smartcardEvents.notify();
+
     return SCARD_S_SUCCESS;
   }
 
@@ -281,6 +288,7 @@ public:
     }
     smartCard.reset(nullptr);
     events++;
+    smartcardEvents.notify();
     return SCARD_S_SUCCESS;
   }
 
@@ -422,6 +430,8 @@ private:
   unsigned int id;
 
   string readerId;
+
+  SmartcardEventSubject smartcardEvents;
 };
 
 /**
@@ -496,25 +506,6 @@ shared_ptr<SmartCardReader> SmartCardReader::instance_of(const string &impl) {
   return nullptr;
 }
 
-class ReaderEvent : public WinsCardEvent {
-public:
-  ReaderEvent(shared_ptr<SmartCardReader> &reader) : new_reader(reader) {};
-
-  DWORD getReaderState(SCARD_READERSTATE readerState[], DWORD cReaders) override {
-    for (unsigned int i=0; i<cReaders; i++) {
-      if (string(readerState[i].szReader) ==  "\\\\?PnP?\\Notification") {
-        readerState[i].szReader = new_reader->getReaderIdentifier().c_str();
-        readerState[i].dwEventState = SCARD_STATE_CHANGED;
-        return SCARD_S_SUCCESS;
-      }
-    }
-    return SCARD_E_UNKNOWN_READER;
-  };
-
-private:
-  shared_ptr<SmartCardReader> new_reader;
-};
-
 /**
  * Implementation of a test smartcard
  */
@@ -538,56 +529,47 @@ unique_ptr<SmartCard> SmartCard::instance_of(const string &impl) {
   return nullptr;
 }
 
-class SmartCardEvent : public WinsCardEvent {
-public:
-  SmartCardEvent(shared_ptr<SmartCardReader> &reader) : readerOfCard(reader) {};
-
-  DWORD getReaderState(SCARD_READERSTATE readerState[], DWORD cReaders) override {
-    for (int i=0; i<cReaders; i++) {
-      if (strcmp(readerState[i].szReader, readerOfCard->getReaderIdentifier().c_str()) == 0) {
-        readerOfCard->getEventInfo(&(readerState[i]));
-        return SCARD_S_SUCCESS;
-      }
-    }
-    return SCARD_E_UNKNOWN_READER;
-  };
-
-private:
-  shared_ptr<SmartCardReader> readerOfCard;
-};
-
-class CancelEvent : public WinsCardEvent {
-public:
-  CancelEvent(shared_ptr<SmartCardReader> &reader);
-
-  DWORD getReaderState(SCARD_READERSTATE readerState[], DWORD cReaders) override {
-    return SCARD_E_CANCELLED;
-  };
-
-private:
-};
-
 /**
  * Event Handler
  */
-class WinscardEventObserver {
-  explicit WinscardEventObserver(SCARD_READERSTATE *rgReaderStates, DWORD cReaders) {
-    toScanReaders = rgReaderStates;
-    numberOfToScanReaders = cReaders;
+class WinscardEventObserver;
+
+
+
+class ReaderEventSubject : public WinscardEventSubject {
+
+public:
+  explicit ReaderEventSubject(shared_ptr<SmartCardReader> rdr) : reader(rdr) { };
+
+  virtual DWORD getReaderState(LPSCARD_READERSTATE readerState) {
+    if (string(readerState->szReader) == "\\\\?PnP?\\Notification") {
+      readerState->szReader = reader->getReaderIdentifier().c_str();
+      readerState->dwEventState = SCARD_STATE_CHANGED;
+      return SCARD_S_SUCCESS;
+    }
+    return SCARD_E_UNKNOWN_READER;
   }
 
 private:
-  condition_variable cv;
-  SCARD_READERSTATE  *toScanReaders;
-  DWORD              numberOfToScanReaders;
+  shared_ptr<SmartCardReader> reader;
 };
 
-class WinscardEventSubject {
+class SmartcardEventSubject : public WinscardEventSubject {
+
+public:
+  explicit SmartcardEventSubject(shared_ptr<SmartCardReader> rdr) : reader(rdr) { };
+
+  virtual DWORD getReaderState(LPSCARD_READERSTATE readerState) {
+    if (string(readerState->szReader) == reader->getReaderIdentifier()) {
+      readerState->szReader = reader->getReaderIdentifier().c_str();
+      reader->getEventInfo(readerState);
+      return SCARD_S_SUCCESS;
+    }
+    return SCARD_E_UNKNOWN_READER;
+  }
 
 private:
-  condition_variable cv;
-  SCARD_READERSTATE  *toScanReaders;
-  DWORD              numberOfToScanReaders;
+  shared_ptr<SmartCardReader> reader;
 };
 
 /**
@@ -632,17 +614,7 @@ public:
     new_reader_impl->setId(next);
     readers[new_reader_impl->getReaderIdentifier()] = new_reader_impl;
 
-    {
-      lock_guard<mutex> lock_events(events_mutex);
-      if (events){
-        // TODO: Don't like the solution (evaluate a condition variable to simplify?)
-        for (unsigned int i=0; i<numberOfToScanReaders; i++) {
-          if (string(toScanReaders[i].szReader) == "\\\\?PnP?\\Notification") {
-            events->set_value(make_unique<ReaderEvent>(new_reader_impl));
-          }
-        }
-      }
-    }
+    readerEvents.notify();
 
     refreshReaderNames();
 
@@ -652,16 +624,6 @@ public:
   DWORD insertSmartCardIn(const string &reader, const string &card) {
     try {
       DWORD ret = readers.at(reader)->insertCard(card);
-
-      lock_guard<mutex> lock_events(events_mutex);
-      if (events){
-        for (unsigned int i=0; i<numberOfToScanReaders; i++) {
-          // TODO: Don't like the solution (evaluate a condition variable to simplify?)
-          if (toScanReaders[i].szReader == reader) {
-            events->set_value(make_unique<SmartCardEvent>(readers.at(reader)));
-          }
-        }
-      }
 
       return ret;
     }
@@ -674,15 +636,6 @@ public:
     try {
       DWORD ret = readers.at(reader)->ejectCard();
 
-      lock_guard<mutex> lock_events(events_mutex);
-      if (events) {
-        // TODO: Don't like the solution (evaluate a condition variable to simplify?)
-        for (unsigned int i=0; i<numberOfToScanReaders; i++) {
-          if (toScanReaders[i].szReader == reader) {
-            events->set_value(make_unique<SmartCardEvent>(readers.at(reader)));
-          }
-        }
-      }
       return ret;
     }
     catch (out_of_range &oor) {
@@ -755,18 +708,10 @@ public:
   // TODO: No support for multithreaded SCardGetStatusChange! Need a vector of promises or condition variables
   DWORD contextGetStatusChange(DWORD dwTimeout, SCARD_READERSTATE *rgReaderStates, DWORD cReaders) {
     {
-      lock_guard<mutex> lock_events(events_mutex);
-      events = make_unique<promise<unique_ptr<WinsCardEvent>>>();
-      toScanReaders = rgReaderStates;
-      numberOfToScanReaders = cReaders;
-    }
-    future<unique_ptr<WinsCardEvent>> event = events->get_future();
-    future_status status = event.wait_for(chrono::seconds(dwTimeout));
-    if (status == future_status::timeout) {
-      return SCARD_E_TIMEOUT;
-    }
-    if (status == future_status::ready) {
-      return event.get()->getReaderState(rgReaderStates, cReaders);
+      std::mutex m;
+      shared_ptr<WinscardEventObserver> observer = make_shared<WinscardEventObserver>(rgReaderStates, cReaders);
+      readerEvents.attach(observer);
+      observer->wait_for(m, dwTimeout);
     }
 
     return SCARD_E_UNEXPECTED;
@@ -808,10 +753,7 @@ private:
     }
   }
 
-  mutex events_mutex;
-  unique_ptr<promise<unique_ptr<WinsCardEvent>>> events;
-  SCARD_READERSTATE *toScanReaders;
-  DWORD             numberOfToScanReaders;
+  ReaderEventSubject readerEvents;
 };
 
 
