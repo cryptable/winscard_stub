@@ -567,6 +567,28 @@ public:
 private:
 };
 
+/**
+ * Event Handler
+ */
+class WinscardEventObserver {
+  explicit WinscardEventObserver(SCARD_READERSTATE *rgReaderStates, DWORD cReaders) {
+    toScanReaders = rgReaderStates;
+    numberOfToScanReaders = cReaders;
+  }
+
+private:
+  condition_variable cv;
+  SCARD_READERSTATE  *toScanReaders;
+  DWORD              numberOfToScanReaders;
+};
+
+class WinscardEventSubject {
+
+private:
+  condition_variable cv;
+  SCARD_READERSTATE  *toScanReaders;
+  DWORD              numberOfToScanReaders;
+};
 
 /**
  * Context to the winscard subsystem
@@ -792,10 +814,10 @@ private:
   DWORD             numberOfToScanReaders;
 };
 
+
 /**
  * Global configuration for the winscard stub
  */
-
 
 /**
  * Winscard handles
