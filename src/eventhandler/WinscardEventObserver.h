@@ -8,9 +8,10 @@
 #include <pcsclite.h>
 #include <mutex>
 #include <condition_variable>
-#include "WinscardEventSubject.h"
 
 namespace eventhandler {
+
+  class WinscardEventSubject;
 
   class WinscardEventObserver {
   public:

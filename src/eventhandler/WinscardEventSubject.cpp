@@ -12,7 +12,7 @@ namespace eventhandler {
     observers.push_back(observer);
   }
 
-  void WinscardEventSubject::deattach(unique_ptr<WinscardEventObserver> observer) {
+  void WinscardEventSubject::deattach(shared_ptr<WinscardEventObserver> observer) {
 
   }
 

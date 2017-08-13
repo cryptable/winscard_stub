@@ -3,6 +3,7 @@
 //
 
 #include "WinscardEventObserver.h"
+#include "WinscardEventSubject.h"
 
 using namespace std;
 
