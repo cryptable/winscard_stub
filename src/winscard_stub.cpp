@@ -6,7 +6,6 @@
 #include <memory.h>
 #include <vector>
 #include <memory>
-#include <future>
 #include <unordered_map>
 #include "stubbing.h"
 #include "winscard_stub.h"
@@ -77,8 +76,6 @@ PCSC_API LONG SCardRemoveSmartCardFromReader(SCARDCONTEXT hContext, LPCSTR szRea
 
 PCSC_API LONG SCardEstablishContext(DWORD dwScope, LPCVOID pvReserved1, LPCVOID pvReserved2, LPSCARDCONTEXT phContext)
 {
-  (void *)pvReserved1;
-  (void *)pvReserved2;
 
   if (phContext == nullptr) {
     return get_return_code_for("winscard", __FUNCTION_NAME__, SCARD_E_INVALID_PARAMETER);

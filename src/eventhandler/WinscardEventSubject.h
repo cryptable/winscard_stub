@@ -13,6 +13,11 @@ namespace eventhandler {
   class WinscardEventSubject {
 
   public:
+    WinscardEventSubject(const WinscardEventSubject&) = delete;
+    WinscardEventSubject(WinscardEventSubject&&) = delete;
+    WinscardEventSubject &operator=(const WinscardEventSubject&) = delete;
+    WinscardEventSubject &operator=(WinscardEventSubject&&) = delete;
+
     virtual ~WinscardEventSubject() = 0;
 
     void attach(std::shared_ptr<WinscardEventObserver> observer);
@@ -31,8 +36,5 @@ namespace eventhandler {
   };
 
 };
-
-
-
 
 #endif //WINSCARD_STUB_WINSCARDEVENTSUBJECT_H

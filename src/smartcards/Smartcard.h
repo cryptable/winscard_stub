@@ -34,34 +34,32 @@ namespace smartcards {
      *
      * @param dwShareMode
      * @param dwPreferredProtocols
-     * @param phCard
      * @param pdwActiveProtocol
      * @return SCARD_S_SUCCESS, SCARD_E_INVALID_VALUE
      */
-    DWORD connect(DWORD dwShareMode, DWORD dwPreferredProtocols, LPSCARDHANDLE phCard, LPDWORD pdwActiveProtocol);
+    DWORD connect(DWORD dwShareMode, DWORD dwPreferredProtocols, LPDWORD pdwActiveProtocol);
 
     /**
      * Disconnect from the smartcard with extra action to take for the card during the disconnect
      *
-     * @param handle The handle of the Smartcard to disconnect
      * @param disposition action to take of the smartcard
      * @return SCARD_S_SUCCESS, SCARD_E_INVALID_HANDLE
      */
-    DWORD disconnect(SCARDHANDLE handle, DWORD dwDisposition);
+    DWORD disconnect(DWORD dwDisposition);
 
     /**
      * Begin multiple calls to the Smartcard
      * @param handle The handle to the smartcard
      * @return SCARD_S_SUCCESS, SCARD_E_SHARING_VIOLATION, SCARD_E_INVALID_HANDLE
      */
-    DWORD beginTransaction(SCARDHANDLE handle);
+    DWORD beginTransaction();
 
     /**
      * End multiple calls to the Smartcard
      * @param handle The handle to the smartcard
      * @return SCARD_S_SUCCESS, SCARD_E_SHARING_VIOLATION, SCARD_E_INVALID_HANDLE
      */
-    DWORD endTransaction(SCARDHANDLE handle, DWORD dwDisposition);
+    DWORD endTransaction(DWORD dwDisposition);
 
     /**
      * Function to override by the specific implemented Smartcard.
@@ -73,7 +71,7 @@ namespace smartcards {
      * @param out_apd_lg length of the APDU result
      * @return SCARD_S_SUCCESS
      */
-    virtual DWORD execute(SCARDHANDLE handle, const char *in_apdu, size_t in_apdu_lg, char **out_apdu, size_t *out_apd_lg) = 0;
+    virtual DWORD execute(const char *in_apdu, size_t in_apdu_lg, char **out_apdu, size_t *out_apd_lg) = 0;
 
     DWORD getPreferredProtocol();
 
@@ -91,17 +89,10 @@ namespace smartcards {
 
   private:
 
-    struct SmartCardContext {
-      DWORD sharingMode;
-      DWORD protocol;
-      bool  transaction;
-    };
-
-    SCARDHANDLE scardHandleIndex{0};
-    std::unordered_map<SCARDHANDLE, std::unique_ptr<SmartCardContext>> scardHandles;
     DWORD allowedSharingModes;
     DWORD allowedProtocol;
     DWORD disposition;
+    bool  transaction;
     std::vector<unsigned char> ATR;
   };
 

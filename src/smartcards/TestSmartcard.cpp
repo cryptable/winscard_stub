@@ -11,7 +11,7 @@ namespace smartcards {
 
   };
 
-  DWORD TestSmartcard::execute(SCARDHANDLE handle, const char *in_apdu, size_t in_apdu_lg, char **out_apdu, size_t *out_apd_lg) {
+  DWORD TestSmartcard::execute(const char *in_apdu, size_t in_apdu_lg, char **out_apdu, size_t *out_apd_lg) {
       return static_cast<DWORD>(SCARD_E_UNSUPPORTED_FEATURE);
   };
 

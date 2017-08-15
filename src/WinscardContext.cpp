@@ -12,8 +12,7 @@ using namespace eventhandler;
 /**
  * Context to the winscard subsystem
  */
-WinscardContext::WinscardContext() {
-}
+WinscardContext::WinscardContext() = default;
 
 WinscardContext::~WinscardContext() {
   delete[] readerNames;
@@ -30,7 +29,7 @@ DWORD WinscardContext::attachReader(string new_reader) {
   auto new_reader_impl = SmartcardReader::instance_of(new_reader);
 
   if (new_reader_impl == nullptr)
-    return SCARD_E_UNKNOWN_READER;
+    return static_cast<DWORD>(SCARD_E_UNKNOWN_READER);
 
   for (auto reader : readers) {
     if (reader.second->getName() == new_reader_impl->getName()) {
@@ -54,7 +53,7 @@ DWORD WinscardContext::insertSmartCardIn(const string &reader, const string &car
     return ret;
   }
   catch (out_of_range &oor) {
-    return SCARD_E_READER_UNAVAILABLE;
+    return static_cast<DWORD>(SCARD_E_READER_UNAVAILABLE);
   }
 }
 
@@ -65,7 +64,7 @@ DWORD WinscardContext::removeSmartCardFrom(const string &reader) {
     return ret;
   }
   catch (out_of_range &oor) {
-    return SCARD_E_READER_UNAVAILABLE;
+    return static_cast<DWORD>(SCARD_E_READER_UNAVAILABLE);
   }
 }
 
@@ -73,10 +72,9 @@ DWORD WinscardContext::connectToSmartCard(const char *readerName, DWORD dwShareM
   DWORD ret = 0;
 
   try {
-    SCARDHANDLE hCard = 0;
-    ret = readers.at(readerName)->connectToSmartCard(dwShareMode, dwPreferredProtocols, &hCard, pdwActiveProtocol);
+    ret = readers.at(readerName)->connectToSmartCard(dwShareMode, dwPreferredProtocols, pdwActiveProtocol);
     if (ret == SCARD_S_SUCCESS) {
-      smartcards_ctx[++cardctx] = make_unique<struct scard_ctx>(readers[readerName], hCard);
+      smartcards_ctx[++cardctx] = make_unique<struct scard_ctx>(readers[readerName]);
       *phCard = cardctx;
     }
     return ret;
@@ -89,7 +87,7 @@ DWORD WinscardContext::connectToSmartCard(const char *readerName, DWORD dwShareM
 DWORD WinscardContext::disconnectFromSmartCard(SCARDHANDLE hCard, DWORD dwDisposition) {
 
   try {
-    DWORD ret = smartcards_ctx.at(hCard)->reader->disconnectFromSmartCard(smartcards_ctx.at(hCard)->scardhandle, dwDisposition);
+    DWORD ret = smartcards_ctx.at(hCard)->reader->disconnectFromSmartCard(dwDisposition);
     smartcards_ctx.erase(hCard);
     return ret;
   }
@@ -101,7 +99,7 @@ DWORD WinscardContext::disconnectFromSmartCard(SCARDHANDLE hCard, DWORD dwDispos
 DWORD WinscardContext::beginTransactionOnSmartcard(SCARDHANDLE hCard) {
 
   try {
-    DWORD ret = smartcards_ctx.at(hCard)->reader->beginTransactionOnSmartcard(smartcards_ctx.at(hCard)->scardhandle);
+    DWORD ret = smartcards_ctx.at(hCard)->reader->beginTransactionOnSmartcard();
     return ret;
   }
   catch (out_of_range &oor) {
@@ -114,7 +112,7 @@ DWORD WinscardContext::endTransactionOnSmartcard(SCARDHANDLE hCard, DWORD dwDisp
   try {
     DWORD ret = smartcards_ctx.at(hCard)
       ->reader
-      ->endTransactionOnSmartcard(smartcards_ctx.at(hCard)->scardhandle,dwDisposition);
+      ->endTransactionOnSmartcard(dwDisposition);
     return ret;
   }
   catch (out_of_range &oor) {
@@ -124,7 +122,7 @@ DWORD WinscardContext::endTransactionOnSmartcard(SCARDHANDLE hCard, DWORD dwDisp
 
 DWORD WinscardContext::smartcardStatus(SCARDHANDLE hCard, LPSTR mszReaderName, LPDWORD pcchReaderLen, LPDWORD pdwState, LPDWORD pdwProtocol, LPBYTE pbAtr, LPDWORD pcbAtrLen) {
   try {
-    return smartcards_ctx.at(hCard)->reader->smartcardStatus(hCard, mszReaderName, pcchReaderLen, pdwState, pdwProtocol, pbAtr, pcbAtrLen);
+    return smartcards_ctx.at(hCard)->reader->smartcardStatus(mszReaderName, pcchReaderLen, pdwState, pdwProtocol, pbAtr, pcbAtrLen);
   }
   catch (out_of_range &oor) {
     return static_cast<DWORD>(SCARD_E_INVALID_HANDLE);
@@ -137,10 +135,10 @@ DWORD WinscardContext::contextGetStatusChange(DWORD dwTimeout, SCARD_READERSTATE
     std::mutex m;
     shared_ptr<WinscardEventObserver> observer = make_shared<WinscardEventObserver>(rgReaderStates, cReaders);
     // readerEvents.attach(observer);
-    observer->wait_for(m, dwTimeout);
+    observer->wait_for(m, static_cast<unsigned int>(dwTimeout));
   }
 
-  return SCARD_E_UNEXPECTED;
+  return static_cast<DWORD>(SCARD_E_UNEXPECTED);
 }
 
 void WinscardContext::refreshReaderNames() {

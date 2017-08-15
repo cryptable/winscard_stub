@@ -25,7 +25,7 @@ namespace eventhandler {
   }
 
   void WinscardEventObserver::update(WinscardEventSubject *event) {
-    for (int i=0; i<numberOfToScanReaders; i++) {
+    for (unsigned int i=0; i<numberOfToScanReaders; i++) {
       if (event->getReaderState(&(toScanReaders[i])) == SCARD_S_SUCCESS) {
         cv.notify_one();
       }

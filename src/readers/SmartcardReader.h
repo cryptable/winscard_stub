@@ -55,7 +55,7 @@ namespace readers {
      * @param pdwActiveProtocol
      * @return SCARD_S_SUCCESS, SCARD_E_NO_SMARTCARD
      */
-    DWORD connectToSmartCard(DWORD dwShareMode, DWORD dwPreferredProtocols, LPSCARDHANDLE phCard, LPDWORD pdwActiveProtocol);
+    DWORD connectToSmartCard(DWORD dwShareMode, DWORD dwPreferredProtocols, LPDWORD pdwActiveProtocol);
 
     /**
      * Proxy function to disconnect from the Smartcard all parameters are send to the smartcard.
@@ -66,7 +66,7 @@ namespace readers {
      * @param pdwActiveProtocol (see SmartCard base class)
      * @return SCARD_S_SUCCESS, SCARD_E_NO_SMARTCARD
      */
-    DWORD disconnectFromSmartCard(SCARDHANDLE hCard, DWORD dwDisposition);
+    DWORD disconnectFromSmartCard(DWORD dwDisposition);
 
     /**
      * Function which inserts a Smartcard into the reader
@@ -82,7 +82,7 @@ namespace readers {
      * @param card name of one of the implemented cards ("test")
      * @return SCARD_S_SUCCESS, SCARD_E_CARD_IN_READER, SCARD_E_CARD_UNSUPPORTED
      */
-    DWORD ejectCard(void);
+    DWORD ejectCard();
 
     /**
      * Proxy begin transaction to the smartcard
@@ -90,7 +90,7 @@ namespace readers {
      * @param scardhandle handle to the scmartcard
      * @return SCARD_S_SUCCESS, SCARD_E_NO_SMARTCARD + errors of Smartcard
      */
-    DWORD beginTransactionOnSmartcard(SCARDHANDLE scardhandle);
+    DWORD beginTransactionOnSmartcard();
 
     /**
      * Proxy end transaction to the smartcard if SCARD_EJECT_CARD is send as dwDisposition, the smartcard is removed
@@ -98,7 +98,7 @@ namespace readers {
      * @param scardhandle handle to the scmartcard
      * @return SCARD_S_SUCCESS, SCARD_E_NO_SMARTCARD + errors of Smartcard
      */
-    DWORD endTransactionOnSmartcard(SCARDHANDLE scardhandle, DWORD dwDisposition);
+    DWORD endTransactionOnSmartcard(DWORD dwDisposition);
 
     /**
      * Get the status of the smartcard inserted in the reader
@@ -111,7 +111,7 @@ namespace readers {
      * @param pcbAtrLen length of the ATR
      * @return
      */
-    DWORD smartcardStatus(SCARDHANDLE hCard, LPSTR mszReaderName, LPDWORD pcchReaderLen, LPDWORD pdwState, LPDWORD pdwProtocol, LPBYTE pbAtr, LPDWORD pcbAtrLen);
+    DWORD smartcardStatus(LPSTR mszReaderName, LPDWORD pcchReaderLen, LPDWORD pdwState, LPDWORD pdwProtocol, LPBYTE pbAtr, LPDWORD pcbAtrLen);
 
     /**
      * The function which must be overwritten by the implemented reader, which should be mainly a pinpad
@@ -124,7 +124,7 @@ namespace readers {
      * @param out_apd_lg length of the APDU result
      * @return SCARD_S_SUCCESS,
      */
-    virtual DWORD execute(SCARDHANDLE scardhandle, const char *in_apdu, size_t in_apdu_lg, char **out_apdu, size_t *out_apd_lg) = 0;
+    virtual DWORD execute(const char *in_apdu, size_t in_apdu_lg, char **out_apdu, size_t *out_apd_lg) = 0;
 
     /**
      * Function to instantiate a supported reader ("Non Pinpad Reader", "Pinpad Reader")

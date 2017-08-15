@@ -69,12 +69,18 @@ void clear_modules();
 class SetReturnCodeFor {
 public:
 
+  SetReturnCodeFor() = delete;
+  SetReturnCodeFor(const SetReturnCodeFor&) = delete;
+  SetReturnCodeFor(SetReturnCodeFor&&) = delete;
+  SetReturnCodeFor &operator=(const SetReturnCodeFor&) = delete;
+  SetReturnCodeFor &operator=(SetReturnCodeFor&&) = delete;
+
   /**
    * Constructor to set the return code for the function specified by the string <function>
    * @param function function which will return the return code
    * @param ret the return code to be returned
    */
-  SetReturnCodeFor(const char *module, const char *function, long ret);
+  explicit SetReturnCodeFor(const char *module, const char *function, long ret);
 
   /**
    * Destructor which will remove the stubbing of the return code
@@ -94,6 +100,12 @@ class SetOutParameterFor {
 
 public:
 
+  SetOutParameterFor() = delete;
+  SetOutParameterFor(const SetOutParameterFor&) = delete;
+  SetOutParameterFor(SetOutParameterFor&&) = delete;
+  SetOutParameterFor &operator=(const SetOutParameterFor&) = delete;
+  SetOutParameterFor &operator=(SetOutParameterFor&&) = delete;
+
   /**
    * Constructor which set the output parameter for the function specified by <function>. This is the basis for all
    * function like parameters, like strings, structs (not a deep copy!), etc...
@@ -103,7 +115,7 @@ public:
    * @param serialized data of the parameter to be returned
    * @param length of data of the parameter to be returned
    */
-  SetOutParameterFor(const char *module, const char *function, const char *param, const unsigned char *data, size_t data_lg);
+  explicit SetOutParameterFor(const char *module, const char *function, const char *param, const unsigned char *data, size_t data_lg);
 
   /**
    * Destructor which will remove the stubbing of the return parameter

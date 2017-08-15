@@ -15,10 +15,11 @@ namespace smartcards {
     allowedSharingModes(dwSharingMode),
     allowedProtocol (dwProtocol),
     disposition(SCARD_LEAVE_CARD),
+    transaction(false),
     ATR(atr) {
   }
 
-  DWORD Smartcard::connect(DWORD dwShareMode, DWORD dwPreferredProtocols, LPSCARDHANDLE phCard, LPDWORD pdwActiveProtocol) {
+  DWORD Smartcard::connect(DWORD dwShareMode, DWORD dwPreferredProtocols, LPDWORD pdwActiveProtocol) {
 
     if (dwShareMode != allowedSharingModes) {
       return static_cast<DWORD>(SCARD_E_INVALID_VALUE);
@@ -27,50 +28,35 @@ namespace smartcards {
       return static_cast<DWORD>(SCARD_E_INVALID_VALUE);
     }
 
-    scardHandles[++scardHandleIndex] = make_unique<struct SmartCardContext>(dwShareMode, allowedProtocol, false);
-    *phCard = scardHandleIndex;
     *pdwActiveProtocol = allowedProtocol;
 
     return SCARD_S_SUCCESS;
   }
 
-  DWORD Smartcard::disconnect(SCARDHANDLE handle, DWORD dwDisposition) {
-    if (scardHandles.erase(handle) == 0) {
-      return static_cast<DWORD>(SCARD_E_INVALID_HANDLE);
-    }
+  DWORD Smartcard::disconnect(DWORD dwDisposition) {
     disposition = dwDisposition;
     return SCARD_S_SUCCESS;
   }
 
-  DWORD Smartcard::beginTransaction(SCARDHANDLE handle) {
-    try {
-      if (scardHandles.at(handle)->transaction)
-        return SCARD_E_SHARING_VIOLATION;
-
-      scardHandles.at(handle)->transaction = true;
-      return SCARD_S_SUCCESS;
+  DWORD Smartcard::beginTransaction() {
+    if (transaction) {
+      return static_cast<DWORD>(SCARD_E_SHARING_VIOLATION);
     }
-    catch (out_of_range &oor) {
-      return SCARD_E_INVALID_HANDLE;
-    }
+    transaction = true;
+    return SCARD_S_SUCCESS;
   }
 
-  DWORD Smartcard::endTransaction(SCARDHANDLE handle, DWORD dwDisposition) {
-    try {
-      if (!scardHandles.at(handle)->transaction)
-        return SCARD_E_NOT_TRANSACTED;
-
-      scardHandles.at(handle)->transaction = false;
+  DWORD Smartcard::endTransaction(DWORD dwDisposition) {
+    if (transaction) {
       disposition = dwDisposition;
-
-      if (disposition == SCARD_RESET_CARD)
-        return SCARD_W_RESET_CARD;
-
+      transaction = false;
+      if (dwDisposition == SCARD_RESET_CARD) {
+        return static_cast<DWORD>(SCARD_W_RESET_CARD);
+      }
       return SCARD_S_SUCCESS;
     }
-    catch (out_of_range &oor) {
-      return SCARD_E_INVALID_HANDLE;
-    }
+
+    return static_cast<DWORD>(SCARD_E_NOT_TRANSACTED);
   }
 
   DWORD Smartcard::getPreferredProtocol() {

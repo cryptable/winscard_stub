@@ -15,7 +15,7 @@ class ReaderEventSubject : public WinscardEventSubject {
 public:
   explicit ReaderEventSubject(std::shared_ptr<readers::SmartcardReader> rdr);
 
-  virtual DWORD getReaderState(LPSCARD_READERSTATE readerState);
+  DWORD getReaderState(LPSCARD_READERSTATE readerState) override;
 
 private:
   std::shared_ptr<readers::SmartcardReader> reader;

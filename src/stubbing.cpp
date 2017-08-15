@@ -8,6 +8,10 @@
 
 using namespace std;
 
+enum stubbing_implemantations {
+  memory
+};
+
 /**
  * The stubbing interface to be implemented for different ways of stubbing
  */
@@ -48,7 +52,7 @@ public:
    * @param impl
    * @return
    */
-  static unique_ptr<Stubbing> instance_of(string &impl);
+  static unique_ptr<Stubbing> instance_of(stubbing_implemantations &impl);
 };
 
 inline Stubbing::~Stubbing() = default;
@@ -213,15 +217,18 @@ private:
 };
 
 
-unique_ptr<Stubbing> Stubbing::instance_of(string &impl) {
-  if (impl == "memory") {
+unique_ptr<Stubbing> Stubbing::instance_of(stubbing_implemantations &impl) {
+  if (impl == stubbing_implemantations::memory) {
     return unique_ptr<Stubbing>(new StubbingMemory());
   }
 
   return nullptr;
 }
 
-auto stubbing_impl = string("memory");
+
+
+auto stubbing_impl = stubbing_implemantations::memory;
+
 map<string, unique_ptr<Stubbing>> g_modules;
 bool g_active = true;
 

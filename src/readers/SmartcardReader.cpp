@@ -21,18 +21,18 @@ namespace readers {
     return name;
   };
 
-  DWORD SmartcardReader::connectToSmartCard(DWORD dwShareMode, DWORD dwPreferredProtocols, LPSCARDHANDLE phCard, LPDWORD pdwActiveProtocol) {
+  DWORD SmartcardReader::connectToSmartCard(DWORD dwShareMode, DWORD dwPreferredProtocols, LPDWORD pdwActiveProtocol) {
     if (smartcard == nullptr) {
       return static_cast<DWORD>(SCARD_E_NO_SMARTCARD);
     }
-    return smartcard->connect(dwShareMode, dwPreferredProtocols, phCard, pdwActiveProtocol);
+    return smartcard->connect(dwShareMode, dwPreferredProtocols, pdwActiveProtocol);
   };
 
-  DWORD SmartcardReader::disconnectFromSmartCard(SCARDHANDLE hCard, DWORD dwDisposition) {
+  DWORD SmartcardReader::disconnectFromSmartCard(DWORD dwDisposition) {
     if (smartcard == nullptr) {
       return static_cast<DWORD>(SCARD_E_NO_SMARTCARD);
     }
-    int ret = smartcard->disconnect(hCard, dwDisposition);
+    DWORD ret = smartcard->disconnect(dwDisposition);
     if (dwDisposition == SCARD_EJECT_CARD) {
       ejectCard();
     }
@@ -53,7 +53,7 @@ namespace readers {
     return SCARD_S_SUCCESS;
   }
 
-  DWORD SmartcardReader::ejectCard(void) {
+  DWORD SmartcardReader::ejectCard() {
     if (nullptr == smartcard) {
       return static_cast<DWORD>(SCARD_E_NO_SMARTCARD);
     }
@@ -64,38 +64,37 @@ namespace readers {
     return SCARD_S_SUCCESS;
   }
 
-  DWORD SmartcardReader::beginTransactionOnSmartcard(SCARDHANDLE scardhandle) {
+  DWORD SmartcardReader::beginTransactionOnSmartcard() {
     if (smartcard == nullptr) {
       return static_cast<DWORD>(SCARD_E_NO_SMARTCARD);
     }
-    return smartcard->beginTransaction(scardhandle);
+    return smartcard->beginTransaction();
   }
 
-  DWORD SmartcardReader::endTransactionOnSmartcard(SCARDHANDLE scardhandle, DWORD dwDisposition) {
+  DWORD SmartcardReader::endTransactionOnSmartcard(DWORD dwDisposition) {
     if (smartcard == nullptr) {
       return static_cast<DWORD>(SCARD_E_NO_SMARTCARD);
     }
-    DWORD ret = smartcard->endTransaction(scardhandle, dwDisposition);
+    DWORD ret = smartcard->endTransaction(dwDisposition);
     if (dwDisposition == SCARD_EJECT_CARD) {
       ejectCard();
     }
     return ret;
   }
 
-  DWORD SmartcardReader::smartcardStatus(SCARDHANDLE hCard, LPSTR mszReaderName, LPDWORD pcchReaderLen, LPDWORD pdwState, LPDWORD pdwProtocol, LPBYTE pbAtr, LPDWORD pcbAtrLen) {
-    (void)hCard;
+  DWORD SmartcardReader::smartcardStatus(LPSTR mszReaderName, LPDWORD pcchReaderLen, LPDWORD pdwState, LPDWORD pdwProtocol, LPBYTE pbAtr, LPDWORD pcbAtrLen) {
 
     *pdwState = getState();
 
     if (smartcard == nullptr){
-      return SCARD_W_REMOVED_CARD;
+      return static_cast<DWORD>(SCARD_W_REMOVED_CARD);
     }
     *pdwProtocol = smartcard->getPreferredProtocol();
 
     if (*pcchReaderLen < (name.size() + 1)) {
       *pcbAtrLen = smartcard->getATR().size();
       *pcchReaderLen = name.size() + 1;
-      return SCARD_E_INSUFFICIENT_BUFFER;
+      return static_cast<DWORD>(SCARD_E_INSUFFICIENT_BUFFER);
     }
     *pcchReaderLen = name.size() + 1;
     if (mszReaderName != nullptr) {
@@ -104,7 +103,7 @@ namespace readers {
     }
     if (*pcbAtrLen < smartcard->getATR().size()) {
       *pcbAtrLen = smartcard->getATR().size();
-      return SCARD_E_INSUFFICIENT_BUFFER;
+      return static_cast<DWORD>(SCARD_E_INSUFFICIENT_BUFFER);
     }
     *pcbAtrLen = smartcard->getATR().size();
     if (pbAtr != nullptr) {

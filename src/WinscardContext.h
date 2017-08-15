@@ -54,7 +54,6 @@ private:
   // Support for Smartcard handles versus reader
   struct scard_ctx {
     std::shared_ptr<readers::SmartcardReader> reader;
-    SCARDHANDLE scardhandle;
   };
 
   std::unordered_map<SCARDHANDLE, std::unique_ptr<struct scard_ctx>> smartcards_ctx;

@@ -17,7 +17,7 @@ namespace eventhandler {
   }
 
   void WinscardEventSubject::notify() {
-    for (auto observer: observers) {
+    for (const auto &observer: observers) {
       observer->update(this);
     }
   }

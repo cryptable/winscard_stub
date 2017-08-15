@@ -17,7 +17,7 @@ namespace smartcards {
   public:
     TestSmartcard();
 
-    DWORD execute(SCARDHANDLE handle, const char *in_apdu, size_t in_apdu_lg, char **out_apdu, size_t *out_apd_lg) override;
+    DWORD execute(const char *in_apdu, size_t in_apdu_lg, char **out_apdu, size_t *out_apd_lg) override;
 
   };
 

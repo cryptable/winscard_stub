@@ -29,8 +29,7 @@ namespace readers {
      * @param out_apd_lg length of the APDU result
      * @return SCARD_S_SUCCESS
      */
-    DWORD execute(SCARDHANDLE scardhandle, const char *in_apdu, size_t in_apdu_lg, char **out_apdu,
-                  size_t *out_apd_lg) override;
+    DWORD execute(const char *in_apdu, size_t in_apdu_lg, char **out_apdu, size_t *out_apd_lg) override;
 
   };
 

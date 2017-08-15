@@ -4,12 +4,14 @@
 
 #include "SmartcardEventSubject.h"
 
+#include <utility>
+
 using namespace std;
 using namespace readers;
 
 namespace eventhandler {
 
-  SmartcardEventSubject::SmartcardEventSubject(shared_ptr<SmartcardReader> rdr) : reader(rdr) { }
+  SmartcardEventSubject::SmartcardEventSubject(shared_ptr<SmartcardReader> rdr) : reader(std::move(rdr)) { }
 
   DWORD SmartcardEventSubject::getReaderState(LPSCARD_READERSTATE readerState) {
     if (string(readerState->szReader) == reader->getReaderIdentifier()) {
@@ -17,6 +19,6 @@ namespace eventhandler {
       reader->getEventInfo(readerState);
       return SCARD_S_SUCCESS;
     }
-    return SCARD_E_UNKNOWN_READER;
+    return static_cast<DWORD>(SCARD_E_UNKNOWN_READER);
   }
 }

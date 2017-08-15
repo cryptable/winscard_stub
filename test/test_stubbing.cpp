@@ -6,7 +6,7 @@
 #include "catch.hpp"
 #include "stubbing.h"
 
-TEST_CASE( "SetReturnCodeFor test", "[API]") {
+TEST_CASE( "SetReturnCodeFor test", "[API]")  {
 
   clear_modules();
 

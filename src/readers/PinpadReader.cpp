@@ -10,7 +10,7 @@ namespace readers {
 
   }
 
-  DWORD PinpadReader::execute(SCARDHANDLE scardhandle, const char *in_apdu, size_t in_apdu_lg, char **out_apdu, size_t *out_apd_lg) {
+  DWORD PinpadReader::execute(const char *in_apdu, size_t in_apdu_lg, char **out_apdu, size_t *out_apd_lg) {
     return static_cast<DWORD>(SCARD_E_UNSUPPORTED_FEATURE);
   }
 
