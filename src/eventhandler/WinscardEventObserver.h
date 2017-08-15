@@ -20,7 +20,7 @@ namespace eventhandler {
 
     void wait_infinite(std::mutex &m);
 
-    void wait_for(std::mutex &m, unsigned int sec);
+    std::cv_status wait_for(std::mutex &m, unsigned int sec);
 
     void update(WinscardEventSubject *event);
 

@@ -11,8 +11,8 @@ using namespace readers;
 
 namespace eventhandler {
 
-  ReaderEventSubject::ReaderEventSubject(shared_ptr<SmartcardReader> rdr) : reader(std::move(rdr)) {
-
+  void ReaderEventSubject::setReader(shared_ptr<readers::SmartcardReader> rdr) {
+    reader = move(rdr);
   }
 
   DWORD ReaderEventSubject::getReaderState(LPSCARD_READERSTATE readerState)

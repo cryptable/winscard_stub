@@ -9,6 +9,7 @@
 #include <memory>
 #include <pcsclite.h>
 #include "../smartcards/Smartcard.h"
+#include "../eventhandler/SmartcardEventSubject.h"
 
 namespace readers {
 
@@ -152,6 +153,18 @@ namespace readers {
      */
     void getEventInfo(LPSCARD_READERSTATE readerState);
 
+    /**
+     * Function to attach to the smartcard event handler of the reader
+     * @param observer
+     */
+    void attachSmartcardEvents(std::shared_ptr<eventhandler::WinscardEventObserver> observer);
+
+    /**
+     * Function to deattach of the smartcard event handler of the reader
+     * @param observer
+     */
+    void deattachSmartcardEvents(std::shared_ptr<eventhandler::WinscardEventObserver> &observer);
+
   protected:
     const std::string name;
 
@@ -167,7 +180,7 @@ namespace readers {
 
     std::string readerId;
 
-  //  eventhandler::SmartcardEventSubject smartcardEvents;
+    eventhandler::SmartcardEventSubject smartcardEvents;
   };
 
 }

@@ -3,6 +3,7 @@
 //
 
 #include "SmartcardEventSubject.h"
+#include "../readers/SmartcardReader.h"
 
 #include <utility>
 
@@ -11,7 +12,9 @@ using namespace readers;
 
 namespace eventhandler {
 
-  SmartcardEventSubject::SmartcardEventSubject(shared_ptr<SmartcardReader> rdr) : reader(std::move(rdr)) { }
+  void SmartcardEventSubject::setReader(readers::SmartcardReader *rdr) {
+    reader = rdr;
+  }
 
   DWORD SmartcardEventSubject::getReaderState(LPSCARD_READERSTATE readerState) {
     if (string(readerState->szReader) == reader->getReaderIdentifier()) {

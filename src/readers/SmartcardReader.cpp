@@ -48,7 +48,9 @@ namespace readers {
       return static_cast<DWORD>(SCARD_E_CARD_UNSUPPORTED);
     }
     events++;
-    // smartcardEvents.notify();
+
+    smartcardEvents.setReader(this);
+    smartcardEvents.notify();
 
     return SCARD_S_SUCCESS;
   }
@@ -59,7 +61,9 @@ namespace readers {
     }
     smartcard.reset(nullptr);
     events++;
-    // smartcardEvents.notify();
+
+    smartcardEvents.setReader(this);
+    smartcardEvents.notify();
 
     return SCARD_S_SUCCESS;
   }
@@ -149,6 +153,14 @@ namespace readers {
       state = state | SCARD_SPECIFIC;
     }
     return state;
+  }
+
+  void SmartcardReader::attachSmartcardEvents(std::shared_ptr<eventhandler::WinscardEventObserver> observer) {
+    smartcardEvents.attach(move(observer));
+  }
+
+  void SmartcardReader::deattachSmartcardEvents(std::shared_ptr<eventhandler::WinscardEventObserver> &observer) {
+    smartcardEvents.deattach(observer);
   }
 
   shared_ptr<SmartcardReader> SmartcardReader::instance_of(const string &impl) {

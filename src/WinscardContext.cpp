@@ -4,6 +4,7 @@
 
 #include <missing_stl.h>
 #include <cstring>
+#include <pcsclite.h>
 #include "WinscardContext.h"
 using namespace std;
 using namespace readers;
@@ -12,7 +13,8 @@ using namespace eventhandler;
 /**
  * Context to the winscard subsystem
  */
-WinscardContext::WinscardContext() = default;
+WinscardContext::WinscardContext() {
+}
 
 WinscardContext::~WinscardContext() {
   delete[] readerNames;
@@ -38,8 +40,8 @@ DWORD WinscardContext::attachReader(string new_reader) {
   }
   new_reader_impl->setId(next);
   readers[new_reader_impl->getReaderIdentifier()] = new_reader_impl;
-
-  // readerEvents.notify();
+  readerEvents.setReader(new_reader_impl);
+  readerEvents.notify();
 
   refreshReaderNames();
 
@@ -129,16 +131,38 @@ DWORD WinscardContext::smartcardStatus(SCARDHANDLE hCard, LPSTR mszReaderName, L
   }
 }
 
-// TODO: No support for multithreaded SCardGetStatusChange! Need a vector of promises or condition variables
 DWORD WinscardContext::contextGetStatusChange(DWORD dwTimeout, SCARD_READERSTATE *rgReaderStates, DWORD cReaders) {
-  {
-    std::mutex m;
-    shared_ptr<WinscardEventObserver> observer = make_shared<WinscardEventObserver>(rgReaderStates, cReaders);
-    // readerEvents.attach(observer);
-    observer->wait_for(m, static_cast<unsigned int>(dwTimeout));
+  std::mutex m;
+  shared_ptr<WinscardEventObserver> observer = make_shared<WinscardEventObserver>(rgReaderStates, cReaders);
+
+  readerEvents.attach(observer);
+  for (auto reader : readers) {
+    for (unsigned int i=0; i<cReaders; i++) {
+      if (reader.first == rgReaderStates[i].szReader) {
+        reader.second->attachSmartcardEvents(observer);
+      }
+    }
   }
 
-  return static_cast<DWORD>(SCARD_E_UNEXPECTED);
+  if (dwTimeout == INFINITE) {
+    observer->wait_infinite(m);
+    return SCARD_S_SUCCESS;
+  }
+
+  cv_status status = observer->wait_for(m, static_cast<unsigned int>(dwTimeout));
+  readerEvents.deattach(observer);
+  for (auto reader : readers) {
+    for (unsigned int i=0; i<cReaders; i++) {
+      if (reader.first == rgReaderStates[i].szReader) {
+        reader.second->deattachSmartcardEvents(observer);
+      }
+    }
+  }
+  if (cv_status::timeout == status) {
+    return static_cast<DWORD>(SCARD_E_TIMEOUT);
+  }
+
+  return SCARD_S_SUCCESS;
 }
 
 void WinscardContext::refreshReaderNames() {

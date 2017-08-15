@@ -19,9 +19,9 @@ namespace eventhandler {
     cv.wait(lk);
   }
 
-  void WinscardEventObserver::wait_for(mutex &m, unsigned int sec) {
+  cv_status WinscardEventObserver::wait_for(mutex &m, unsigned int sec) {
     std::unique_lock<std::mutex> lk(m);
-    cv.wait_for(lk, chrono::seconds(sec));
+    return cv.wait_for(lk, chrono::seconds(sec));
   }
 
   void WinscardEventObserver::update(WinscardEventSubject *event) {

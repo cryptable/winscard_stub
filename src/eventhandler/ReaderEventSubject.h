@@ -13,7 +13,8 @@ namespace eventhandler {
 class ReaderEventSubject : public WinscardEventSubject {
 
 public:
-  explicit ReaderEventSubject(std::shared_ptr<readers::SmartcardReader> rdr);
+
+  void setReader(std::shared_ptr<readers::SmartcardReader> rdr);
 
   DWORD getReaderState(LPSCARD_READERSTATE readerState) override;
 

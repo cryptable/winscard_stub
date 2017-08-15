@@ -49,6 +49,7 @@ public:
 
   // TODO: No support for multithreaded SCardGetStatusChange! Need a vector of promises or condition variables
   DWORD contextGetStatusChange(DWORD dwTimeout, SCARD_READERSTATE *rgReaderStates, DWORD cReaders);
+
 private:
 
   // Support for Smartcard handles versus reader
@@ -66,7 +67,8 @@ private:
   size_t readerNamesLg = 0;
 
   void refreshReaderNames();
-//  eventhandler::ReaderEventSubject readerEvents;
+
+  eventhandler::ReaderEventSubject readerEvents;
 };
 
 

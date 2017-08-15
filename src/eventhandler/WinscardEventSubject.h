@@ -5,7 +5,7 @@
 #ifndef WINSCARD_STUB_WINSCARDEVENTSUBJECT_H
 #define WINSCARD_STUB_WINSCARDEVENTSUBJECT_H
 
-#include <vector>
+#include <set>
 #include "WinscardEventObserver.h"
 
 namespace eventhandler {
@@ -22,7 +22,7 @@ namespace eventhandler {
 
     void attach(std::shared_ptr<WinscardEventObserver> observer);
 
-    void deattach(std::shared_ptr<WinscardEventObserver> observer);
+    void deattach(std::shared_ptr<WinscardEventObserver> &observer);
 
     void notify();
 
@@ -32,7 +32,8 @@ namespace eventhandler {
     WinscardEventSubject();
 
   private:
-    std::vector<std::shared_ptr<WinscardEventObserver>> observers;
+    std::mutex m;
+    std::set<std::shared_ptr<WinscardEventObserver>> observers;
   };
 
 };
